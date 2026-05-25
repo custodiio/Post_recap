@@ -1,0 +1,29 @@
+# Ambiente virtual
+venv/
+.venv/
+env/
+
+# Cache e Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Banco de dados e dados locais
+posts.db
+posts.db-journal
+
+# Credenciais, Sessões e Configurações (CRÍTICO)
+.env
+token.json
+instagram_session.json
+
+# Pastas temporárias de downloads/mídias
+temp/
+temp_queue/
+
+# Logs e arquivos de sistema
+*.log
+.DS_Store
+Thumbs.db
