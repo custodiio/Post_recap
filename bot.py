@@ -35,7 +35,7 @@ import instagram_uploader
 load_dotenv()
 
 # Estados da conversação
-SELECT_PLATFORMS, SELECT_YOUTUBE_TITLE, INPUT_YOUTUBE_TITLE_MANUAL, SELECT_INSTAGRAM_SCHEDULING, INPUT_INSTAGRAM_TIME, CONFIRM_POST = range(6)
+SELECT_PLATFORMS, SELECT_YOUTUBE_TITLE, INPUT_YOUTUBE_TITLE_MANUAL, SELECT_SHORTS_TITLE, INPUT_SHORTS_TITLE_MANUAL, SELECT_INSTAGRAM_SCHEDULING, INPUT_INSTAGRAM_TIME, CONFIRM_POST = range(8)
 
 # Lista de usuários aprovados (suporta IDs e Usernames)
 APPROVED_USERS = [u.strip() for u in (os.getenv("AUTHORIZED_TELEGRAM_USERS", "") + "," + os.getenv("APPROVED_USERS", "")).split(",") if u.strip()]
@@ -69,8 +69,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
     # Inicializa o dicionário de contexto da postagem
     context.user_data["post_data"] = {
-        "platforms": {"youtube": False, "tiktok": False, "instagram": False},
+        "platforms": {"youtube": False, "youtube_shorts": False, "tiktok": False, "instagram": False},
         "youtube_title": "",
+        "shorts_title": "",
         "instagram_scheduled_time": None,  # None se for postar agora
         "guia": None,
         "files": None
@@ -94,8 +95,9 @@ async def show_main_menu_callback(update: Update, context: ContextTypes.DEFAULT_
     await query.answer()
     
     context.user_data["post_data"] = {
-        "platforms": {"youtube": False, "tiktok": False, "instagram": False},
+        "platforms": {"youtube": False, "youtube_shorts": False, "tiktok": False, "instagram": False},
         "youtube_title": "",
+        "shorts_title": "",
         "instagram_scheduled_time": None,
         "guia": None,
         "files": None
@@ -229,11 +231,13 @@ async def menu_postar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 def get_platforms_keyboard(platforms):
     """Gera o teclado de seleção de plataformas."""
     yt_check = "✅" if platforms["youtube"] else "⬜"
+    ys_check = "✅" if platforms["youtube_shorts"] else "⬜"
     tt_check = "✅" if platforms["tiktok"] else "⬜"
     ig_check = "✅" if platforms["instagram"] else "⬜"
     
     keyboard = [
         [InlineKeyboardButton(f"{yt_check} YouTube", callback_data="toggle_youtube")],
+        [InlineKeyboardButton(f"{ys_check} YouTube Shorts", callback_data="toggle_youtube-shorts")],
         [InlineKeyboardButton(f"{tt_check} TikTok", callback_data="toggle_tiktok")],
         [InlineKeyboardButton(f"{ig_check} Instagram", callback_data="toggle_instagram")],
         [
@@ -248,9 +252,11 @@ async def toggle_platform(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer()
     
-    platform = query.data.split("_")[1]
+    # Extrai o nome da plataforma após "toggle_" (suporta nomes com hífen como youtube-shorts)
+    platform_key = query.data.replace("toggle_", "", 1).replace("-", "_")
     platforms = context.user_data["post_data"]["platforms"]
-    platforms[platform] = not platforms[platform]
+    if platform_key in platforms:
+        platforms[platform_key] = not platforms[platform_key]
     
     reply_markup = get_platforms_keyboard(platforms)
     await query.edit_message_reply_markup(reply_markup=reply_markup)
@@ -293,8 +299,12 @@ async def confirm_platforms(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return SELECT_YOUTUBE_TITLE
+    
+    # Se YouTube Shorts foi selecionado (e YouTube normal não), pergunta o título do Short
+    elif platforms["youtube_shorts"]:
+        return await ask_shorts_title(query, context)
         
-    # Se não tem YouTube, mas tem Instagram, decide agendamento
+    # Se não tem YouTube nem Shorts, mas tem Instagram, decide agendamento
     elif platforms["instagram"]:
         return await ask_instagram_scheduling(query, context)
         
@@ -319,8 +329,10 @@ async def handle_youtube_title_selection(update: Update, context: ContextTypes.D
         await query.edit_message_text("Por favor, digite o título desejado para o YouTube:")
         return INPUT_YOUTUBE_TITLE_MANUAL
         
-    # Após definir o título do YouTube, verifica se precisa definir agendamento do Instagram
-    if context.user_data["post_data"]["platforms"]["instagram"]:
+    # Após definir o título do YouTube, verifica se precisa definir título do Shorts
+    if context.user_data["post_data"]["platforms"]["youtube_shorts"]:
+        return await ask_shorts_title(query, context)
+    elif context.user_data["post_data"]["platforms"]["instagram"]:
         return await ask_instagram_scheduling(query, context)
     else:
         return await show_final_confirmation(query, context)
@@ -337,8 +349,25 @@ async def handle_youtube_title_manual(update: Update, context: ContextTypes.DEFA
         
     context.user_data["post_data"]["youtube_title"] = title
     
-    # Após definir o título do YouTube, verifica se precisa definir agendamento do Instagram
-    if context.user_data["post_data"]["platforms"]["instagram"]:
+    # Após definir o título do YouTube, verifica próximo passo
+    if context.user_data["post_data"]["platforms"]["youtube_shorts"]:
+        # Precisa definir título do Shorts — envia como nova mensagem
+        guia = context.user_data["post_data"]["guia"]
+        titulo_p = guia.get("titulo_principal", "Sem Título")
+        keyboard = [
+            [InlineKeyboardButton(f"Usar: {titulo_p[:40]}... #Shorts", callback_data="shorts_title_principal")],
+            [InlineKeyboardButton("✍️ Digitar Título Manualmente", callback_data="shorts_title_manual")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "🎬 **Título para o YouTube Shorts:**\n\n"
+            f"**Sugestão:** {titulo_p} #Shorts\n\n"
+            "Selecione ou digite um título:",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        return SELECT_SHORTS_TITLE
+    elif context.user_data["post_data"]["platforms"]["instagram"]:
         # Como veio por mensagem de texto (não callback), enviamos uma nova mensagem
         keyboard = [
             [InlineKeyboardButton("Postar Agora", callback_data="ig_now")],
@@ -353,6 +382,93 @@ async def handle_youtube_title_manual(update: Update, context: ContextTypes.DEFA
         return SELECT_INSTAGRAM_SCHEDULING
     else:
         # Mostra confirmação
+        await show_final_confirmation_message(update.message, context)
+        return CONFIRM_POST
+
+async def ask_shorts_title(query, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Pergunta o título para o YouTube Shorts."""
+    guia = context.user_data["post_data"]["guia"]
+    titulo_p = guia.get("titulo_principal", "Sem Título")
+    alt_titles = guia.get("titulos_alternativos", [])
+    
+    text = (
+        f"🎬 **Título para o YouTube Shorts:**\n\n"
+        f"**Sugestão:** {titulo_p} #Shorts\n\n"
+        f"Selecione ou digite um título:"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton(f"Usar: {titulo_p[:40]}... #Shorts", callback_data="shorts_title_principal")]
+    ]
+    
+    for idx, alt in enumerate(alt_titles):
+        keyboard.append([InlineKeyboardButton(f"Alt {idx+1}: {alt[:30]}... #Shorts", callback_data=f"shorts_title_alt_{idx}")])
+    
+    keyboard.append([InlineKeyboardButton("✍️ Digitar Título Manualmente", callback_data="shorts_title_manual")])
+    keyboard.append([InlineKeyboardButton("Voltar", callback_data="menu_postar")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    return SELECT_SHORTS_TITLE
+
+async def handle_shorts_title_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Processa a escolha do título do YouTube Shorts."""
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    guia = context.user_data["post_data"]["guia"]
+    
+    if data == "shorts_title_principal":
+        title = guia.get("titulo_principal", "Sem Título")
+        # Adiciona #Shorts se não tiver
+        if "#shorts" not in title.lower():
+            title = f"{title} #Shorts"
+        context.user_data["post_data"]["shorts_title"] = title
+    elif data.startswith("shorts_title_alt_"):
+        idx = int(data.split("_")[-1])
+        title = guia.get("titulos_alternativos", [])[idx]
+        if "#shorts" not in title.lower():
+            title = f"{title} #Shorts"
+        context.user_data["post_data"]["shorts_title"] = title
+    elif data == "shorts_title_manual":
+        await query.edit_message_text("Por favor, digite o título desejado para o YouTube Shorts:\n\n💡 _Dica: inclua #Shorts no título para melhor visibilidade._", parse_mode="Markdown")
+        return INPUT_SHORTS_TITLE_MANUAL
+    
+    # Próximo passo
+    if context.user_data["post_data"]["platforms"]["instagram"]:
+        return await ask_instagram_scheduling(query, context)
+    else:
+        return await show_final_confirmation(query, context)
+
+async def handle_shorts_title_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recebe o título do Shorts digitado manualmente."""
+    if not user_is_approved(update):
+        return ConversationHandler.END
+    
+    title = update.message.text.strip()
+    if not title:
+        await update.message.reply_text("Título inválido. Por favor, envie um texto válido:")
+        return INPUT_SHORTS_TITLE_MANUAL
+    
+    # Adiciona #Shorts se o usuário não incluiu
+    if "#shorts" not in title.lower():
+        title = f"{title} #Shorts"
+    context.user_data["post_data"]["shorts_title"] = title
+    
+    if context.user_data["post_data"]["platforms"]["instagram"]:
+        keyboard = [
+            [InlineKeyboardButton("Postar Agora", callback_data="ig_now")],
+            [InlineKeyboardButton("Agendar Postagem", callback_data="ig_schedule")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "🕐 **Agendamento do Instagram**\nComo deseja enviar o Reels para o Instagram?",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        return SELECT_INSTAGRAM_SCHEDULING
+    else:
         await show_final_confirmation_message(update.message, context)
         return CONFIRM_POST
 
@@ -417,6 +533,8 @@ async def show_final_confirmation(query, context: ContextTypes.DEFAULT_TYPE) -> 
     redes = []
     if platforms["youtube"]:
         redes.append(f"• YouTube (Título: {post_data['youtube_title']})")
+    if platforms["youtube_shorts"]:
+        redes.append(f"• YouTube Shorts (Título: {post_data['shorts_title']})")
     if platforms["tiktok"]:
         redes.append("• TikTok (Privado)")
     if platforms["instagram"]:
@@ -629,6 +747,7 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
             raise Exception("Vídeo final (video_final.mp4) não pôde ser baixado do Drive.")
             
         results_text = "🚀 <b>Resultados do Envio:</b>\n\n"
+        thumb_warnings = []  # Acumula avisos sobre capas ausentes
         
         # 3. Upload para o YouTube
         if platforms["youtube"]:
@@ -639,6 +758,10 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                 # Constrói a descrição do YouTube com timestamps e hashtags
                 desc_yt = guia.get("descricao", "")
                 tags_yt = [t.strip() for t in guia.get("tags_youtube", "").split(",") if t.strip()]
+                
+                if not yt_thumb or not os.path.exists(yt_thumb or ""):
+                    thumb_warnings.append("YouTube: thumbnail_youtube.png não encontrada no Drive — vídeo enviado sem capa.")
+                    print("[PIPELINE LOG] YouTube: thumbnail ausente, enviando sem capa.", flush=True)
                 
                 vid_id, vid_url = await loop.run_in_executor(
                     None,
@@ -659,6 +782,45 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                 db.update_post_status(db_post_id, "youtube", "failed", error=str(e))
                 results_text += f"❌ <b>YouTube:</b> Falhou! Erro: {e}\n\n"
                 print(f"[PIPELINE LOG] YouTube falhou! Erro: {e}", flush=True)
+        
+        # 3.5. Upload para o YouTube Shorts
+        if platforms["youtube_shorts"]:
+            shorts_title = post_data.get("shorts_title", "")
+            print(f"[PIPELINE LOG] Iniciando upload para o YouTube Shorts com o título: '{shorts_title}'...", flush=True)
+            progress_cb = make_telegram_progress_callback(status_msg, "📤 Enviando YouTube Shorts:")
+            await safe_edit_status("📤 Enviando YouTube Shorts: 0%")
+            try:
+                desc_yt = guia.get("descricao", "")
+                # Adiciona #Shorts na descrição também para garantir detecção
+                if "#shorts" not in desc_yt.lower():
+                    desc_yt = f"{desc_yt}\n\n#Shorts"
+                tags_yt = [t.strip() for t in guia.get("tags_youtube", "").split(",") if t.strip()]
+                if "Shorts" not in tags_yt:
+                    tags_yt.append("Shorts")
+                
+                if not yt_thumb or not os.path.exists(yt_thumb or ""):
+                    thumb_warnings.append("YouTube Shorts: thumbnail_youtube.png não encontrada — vídeo enviado sem capa.")
+                    print("[PIPELINE LOG] YouTube Shorts: thumbnail ausente, enviando sem capa.", flush=True)
+                
+                vid_id, vid_url = await loop.run_in_executor(
+                    None,
+                    youtube_uploader.upload_video_to_youtube,
+                    video_path,
+                    shorts_title,
+                    desc_yt,
+                    tags_yt,
+                    "24",
+                    "private",
+                    yt_thumb,
+                    progress_cb
+                )
+                db.update_post_status(db_post_id, "youtube", "completed", url=vid_url)
+                results_text += f"✅ <b>YouTube Shorts:</b> Enviado com sucesso!\n🔗 <a href=\"{vid_url}\">Link do Short</a>\n\n"
+                print(f"[PIPELINE LOG] YouTube Shorts enviado com sucesso! URL: {vid_url}", flush=True)
+            except Exception as e:
+                db.update_post_status(db_post_id, "youtube", "failed", error=str(e))
+                results_text += f"❌ <b>YouTube Shorts:</b> Falhou! Erro: {e}\n\n"
+                print(f"[PIPELINE LOG] YouTube Shorts falhou! Erro: {e}", flush=True)
                 
         # 4. Upload para o TikTok
         if platforms["tiktok"]:
@@ -685,8 +847,11 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                 results_text += f"❌ <b>TikTok:</b> Falhou! Erro: {e}\n\n"
                 print(f"[PIPELINE LOG] TikTok falhou! Erro: {e}", flush=True)
                 
-        # 5. Upload para o Instagram
+        # 5. Upload para o Instagram (capa opcional)
         if platforms["instagram"]:
+            if not tt_thumb or not os.path.exists(tt_thumb or ""):
+                thumb_warnings.append("Instagram: thumbnail_tiktok.png não encontrada — Reels enviado sem capa personalizada.")
+                print("[PIPELINE LOG] Instagram: thumbnail ausente, enviando sem capa.", flush=True)
             sched_time = post_data["instagram_scheduled_time"]
             if sched_time:
                 # Salva na fila
@@ -719,6 +884,13 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                     results_text += f"❌ <b>Instagram:</b> Falhou! Erro: {e}\n\n"
                     print(f"[PIPELINE LOG] Instagram Reels falhou! Erro: {e}", flush=True)
                     
+        # Adiciona avisos de capas ausentes ao final do resultado
+        if thumb_warnings:
+            results_text += "⚠️ <b>Avisos sobre capas:</b>\n"
+            for tw in thumb_warnings:
+                results_text += f"• {tw}\n"
+            results_text += "\n"
+        
         # Conclusão
         print("[PIPELINE LOG] Pipeline finalizado. Enviando resultado final para o usuário...", flush=True)
         await safe_edit_status(results_text, parse_mode="HTML", disable_web_page_preview=True)
@@ -790,6 +962,13 @@ def main():
             ],
             INPUT_YOUTUBE_TITLE_MANUAL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_youtube_title_manual)
+            ],
+            SELECT_SHORTS_TITLE: [
+                CallbackQueryHandler(handle_shorts_title_selection, pattern="^shorts_title_"),
+                CallbackQueryHandler(menu_postar, pattern="^menu_postar$"),
+            ],
+            INPUT_SHORTS_TITLE_MANUAL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_shorts_title_manual)
             ],
             SELECT_INSTAGRAM_SCHEDULING: [
                 CallbackQueryHandler(handle_instagram_scheduling, pattern="^ig_")
