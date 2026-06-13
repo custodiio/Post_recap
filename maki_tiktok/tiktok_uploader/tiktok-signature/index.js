@@ -75,12 +75,11 @@ class Signer {
     });
 
     let LOAD_SCRIPTS = ["signer.js", "webmssdk.js", "xbogus.js"];
-    LOAD_SCRIPTS.forEach(async (script) => {
+    for (const script of LOAD_SCRIPTS) {
       await this.page.addScriptTag({
         path: `${__dirname}/javascript/${script}`,
       });
-      // console.log("[+] " + script + " loaded");
-    });
+    }
 
     await this.page.evaluate(() => {
       window.generateSignature = function generateSignature(url) {
