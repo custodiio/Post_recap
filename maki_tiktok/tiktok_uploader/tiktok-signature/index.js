@@ -74,22 +74,15 @@ class Signer {
       waitUntil: "networkidle",
     });
 
-    let LOAD_SCRIPTS = ["signer.js", "webmssdk.js", "xbogus.js"];
-    for (const script of LOAD_SCRIPTS) {
-      await this.page.addScriptTag({
-        path: `${__dirname}/javascript/${script}`,
-      });
-    }
-
     await this.page.evaluate(() => {
       window.generateSignature = function generateSignature(url) {
-        if (typeof window.byted_acrawler.sign !== "function") {
+        if (typeof window.byted_acrawler === "undefined" || typeof window.byted_acrawler.sign !== "function") {
           throw "No signature function found";
         }
         return window.byted_acrawler.sign({ url: url });
       };
 
-      window.generateBogus = function generateBogus(params) {
+      window.generateBogus = function generateBogusFallback(params) {
         if (typeof window.generateBogus !== "function") {
           throw "No X-Bogus function found";
         }
@@ -97,6 +90,13 @@ class Signer {
       };
       return this;
     });
+
+    let LOAD_SCRIPTS = ["signer.js", "webmssdk.js", "xbogus.js"];
+    for (const script of LOAD_SCRIPTS) {
+      await this.page.addScriptTag({
+        path: `${__dirname}/javascript/${script}`,
+      });
+    }
   }
 
   async navigator() {
