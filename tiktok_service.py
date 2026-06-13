@@ -111,7 +111,13 @@ def upload_video_to_tiktok(video_path, title, privacy_level="Public", schedule_t
     """
     import sys
     from datetime import datetime
+    import os
     
+    # Injeta o caminho do Node.js do NVM no PATH, caso o bot esteja rodando via SystemD na VPS
+    nvm_node_path = "/home/mariadelurdesalvesdoprado/.nvm/versions/node/v20.20.2/bin"
+    if nvm_node_path not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = f"{nvm_node_path}:{os.environ.get('PATH', '')}"
+        
     # Adiciona a pasta do novo repositório ao PATH
     repo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maki_tiktok")
     if repo_path not in sys.path:
