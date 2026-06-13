@@ -18,6 +18,8 @@ posts.db-journal
 .env
 token.json
 instagram_session.json
+TK_cookies_*.json
+captcha_image.jpg
 
 # Pastas temporárias de downloads/mídias
 temp/
@@ -27,3 +29,4 @@ temp_queue/
 *.log
 .DS_Store
 Thumbs.db
+tiktok_approval/

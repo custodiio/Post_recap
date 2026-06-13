@@ -95,13 +95,72 @@ class ProgressFile:
     def close(self):
         self.file.close()
 
-def upload_video_to_tiktok(video_path, title, privacy_level="PRIVATE", progress_callback=None):
+def upload_video_to_tiktok_official(video_path, title, privacy_level="PRIVATE", progress_callback=None):
     """
-    Realiza o envio de um vídeo para o TikTok (Direct Post) usando upload em chunks.
+    (MÉTODO ANTIGO / API OFICIAL) Realiza o envio de um vídeo para o TikTok (Direct Post) usando upload em chunks.
     O vídeo é enviado como privado por padrão (PRIVATE).
     Retorna o publish_id gerado pelo TikTok.
     """
     access_token = get_valid_tiktok_token()
+
+def upload_video_to_tiktok(video_path, title, privacy_level="Public", schedule_time=None, schedule_day=None, progress_callback=None):
+    """
+    Novo método de upload 100% via API HTTP (makiisthenes/TiktokAutoUploader).
+    Suporta configuração de privacidade (Public: 0, Private: 1) e agendamento customizado (em segundos).
+    O schedule_time agora passa a receber diretamente a string original do agendamento 'AAAA-MM-DD HH:MM:SS' para cálculo correto de segundos no futuro.
+    """
+    import sys
+    from datetime import datetime
+    
+    # Adiciona a pasta do novo repositório ao PATH
+    repo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maki_tiktok")
+    if repo_path not in sys.path:
+        sys.path.append(repo_path)
+    
+    # Troca de diretório temporária para que a biblioteca consiga achar a pasta CookiesDir relativa a ela
+    orig_cwd = os.getcwd()
+    os.chdir(repo_path)
+    
+    try:
+        from tiktok_uploader.tiktok import upload_video
+        
+        account_name = os.getenv("TIKTOK_ACCOUNT_NAME", "default_account")
+        print(f"[TIKTOK_API] Iniciando postagem via HTTP API. Privacidade: {privacy_level}, Agendamento: {schedule_time}")
+        
+        # O novo repo aceita visibility_type: 0 (Public) e 1 (Private)
+        vis_type = 1 if privacy_level.lower() == "private" else 0
+        
+        # O novo repo aceita schedule_time como a quantidade de SEGUNDOS a partir de agora.
+        future_seconds = 0
+        if schedule_time:
+            dt_obj = datetime.strptime(schedule_time, "%Y-%m-%d %H:%M:%S")
+            diff = dt_obj - datetime.now()
+            future_seconds = int(diff.total_seconds())
+            if future_seconds < 900:
+                print("[AVISO] O agendamento mínimo do TikTok é 20 minutos (usando limite mínimo para a chamada).")
+                future_seconds = 900
+            
+        print(f"-> Parametros convertidos: Visibilidade={vis_type}, Agendamento em={future_seconds}s")
+        
+        result = upload_video(
+            session_user=account_name,
+            video=video_path,
+            title=title,
+            schedule_time=future_seconds,
+            visibility_type=vis_type
+        )
+        
+        if result is False:
+            raise Exception("A nova biblioteca falhou ao realizar a postagem (Retornou False). Verifique o cookie gerado.")
+            
+        if progress_callback:
+            progress_callback(100)
+            
+        # O script original da nova biblioteca retorna True em sucesso. Como não há um "publish_id" claro, enviamos um placeholder.
+        return "api_posted_success"
+        
+    finally:
+        os.chdir(orig_cwd)
     video_size = os.path.getsize(video_path)
     
     # Configurações de chunks para o TikTok (conforme documentação oficial)

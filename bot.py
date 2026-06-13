@@ -29,13 +29,13 @@ from telegram.ext import (
 import db
 from drive_manager import drive_manager
 import youtube_uploader
-import tiktok_uploader
+import tiktok_service
 import instagram_uploader
 
 load_dotenv()
 
 # Estados da conversação
-SELECT_PLATFORMS, SELECT_YOUTUBE_TITLE, INPUT_YOUTUBE_TITLE_MANUAL, SELECT_SHORTS_TITLE, INPUT_SHORTS_TITLE_MANUAL, SELECT_INSTAGRAM_SCHEDULING, INPUT_INSTAGRAM_TIME, CONFIRM_POST = range(8)
+SELECT_PLATFORMS, SELECT_YOUTUBE_TITLE, INPUT_YOUTUBE_TITLE_MANUAL, SELECT_SHORTS_TITLE, INPUT_SHORTS_TITLE_MANUAL, SELECT_INSTAGRAM_SCHEDULING, INPUT_INSTAGRAM_TIME, SELECT_TIKTOK_PRIVACY, SELECT_TIKTOK_SCHEDULING, INPUT_TIKTOK_TIME, CONFIRM_POST = range(11)
 
 # Lista de usuários aprovados (suporta IDs e Usernames)
 APPROVED_USERS = [u.strip() for u in (os.getenv("AUTHORIZED_TELEGRAM_USERS", "") + "," + os.getenv("APPROVED_USERS", "")).split(",") if u.strip()]
@@ -309,6 +309,8 @@ async def confirm_platforms(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return await ask_instagram_scheduling(query, context)
         
     # Senão, vai direto para a confirmação final
+    elif platforms["tiktok"]:
+        return await check_tiktok_workflow(update, context)
     else:
         return await show_final_confirmation(query, context)
 
@@ -334,6 +336,8 @@ async def handle_youtube_title_selection(update: Update, context: ContextTypes.D
         return await ask_shorts_title(query, context)
     elif context.user_data["post_data"]["platforms"]["instagram"]:
         return await ask_instagram_scheduling(query, context)
+    elif context.user_data["post_data"]["platforms"]["tiktok"]:
+        return await check_tiktok_workflow(update, context)
     else:
         return await show_final_confirmation(query, context)
 
@@ -380,6 +384,8 @@ async def handle_youtube_title_manual(update: Update, context: ContextTypes.DEFA
             parse_mode="Markdown"
         )
         return SELECT_INSTAGRAM_SCHEDULING
+    elif context.user_data["post_data"]["platforms"]["tiktok"]:
+        return await check_tiktok_workflow(update, context)
     else:
         # Mostra confirmação
         await show_final_confirmation_message(update.message, context)
@@ -438,6 +444,8 @@ async def handle_shorts_title_selection(update: Update, context: ContextTypes.DE
     # Próximo passo
     if context.user_data["post_data"]["platforms"]["instagram"]:
         return await ask_instagram_scheduling(query, context)
+    elif context.user_data["post_data"]["platforms"]["tiktok"]:
+        return await check_tiktok_workflow(update, context)
     else:
         return await show_final_confirmation(query, context)
 
@@ -468,6 +476,8 @@ async def handle_shorts_title_manual(update: Update, context: ContextTypes.DEFAU
             parse_mode="Markdown"
         )
         return SELECT_INSTAGRAM_SCHEDULING
+    elif context.user_data["post_data"]["platforms"]["tiktok"]:
+        return await check_tiktok_workflow(update, context)
     else:
         await show_final_confirmation_message(update.message, context)
         return CONFIRM_POST
@@ -494,6 +504,8 @@ async def handle_instagram_scheduling(update: Update, context: ContextTypes.DEFA
     data = query.data
     if data == "ig_now":
         context.user_data["post_data"]["instagram_scheduled_time"] = None
+        if context.user_data["post_data"]["platforms"]["tiktok"]:
+            return await check_tiktok_workflow(update, context)
         return await show_final_confirmation(query, context)
     elif data == "ig_schedule":
         await query.edit_message_text(
@@ -515,6 +527,9 @@ async def handle_instagram_time(update: Update, context: ContextTypes.DEFAULT_TY
         dt = datetime.strptime(raw_time, "%Y-%m-%d %H:%M")
         context.user_data["post_data"]["instagram_scheduled_time"] = dt.strftime("%Y-%m-%d %H:%M:00")
         
+        if context.user_data["post_data"]["platforms"]["tiktok"]:
+            return await check_tiktok_workflow(update, context)
+            
         await show_final_confirmation_message(update.message, context)
         return CONFIRM_POST
     except ValueError:
@@ -524,6 +539,87 @@ async def handle_instagram_time(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown"
         )
         return INPUT_INSTAGRAM_TIME
+
+async def check_tiktok_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Inicia o fluxo de opções do TikTok."""
+    query = getattr(update, "callback_query", None)
+    message = getattr(update, "message", None)
+    
+    text = "🎬 **Configuração do TikTok**\nQual a privacidade desejada para o vídeo?"
+    keyboard = [
+        [
+            InlineKeyboardButton("🌍 Público", callback_data="tt_public"),
+            InlineKeyboardButton("👥 Amigos", callback_data="tt_friends"),
+            InlineKeyboardButton("🔒 Privado", callback_data="tt_private")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if query:
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    elif message:
+        await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        
+    return SELECT_TIKTOK_PRIVACY
+
+async def handle_tiktok_privacy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    if data == "tt_public":
+        context.user_data["post_data"]["tiktok_privacy"] = "Public"
+    elif data == "tt_friends":
+        context.user_data["post_data"]["tiktok_privacy"] = "Friends"
+    elif data == "tt_private":
+        context.user_data["post_data"]["tiktok_privacy"] = "Private"
+        
+    text = "🕐 **Agendamento do TikTok**\nComo deseja enviar o vídeo para o TikTok?"
+    keyboard = [
+        [
+            InlineKeyboardButton("Postar Agora", callback_data="tt_now"),
+            InlineKeyboardButton("Agendar Postagem", callback_data="tt_schedule")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    return SELECT_TIKTOK_SCHEDULING
+
+async def handle_tiktok_scheduling(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    if data == "tt_now":
+        context.user_data["post_data"]["tiktok_scheduled_time"] = None
+        return await show_final_confirmation(query, context)
+    elif data == "tt_schedule":
+        await query.edit_message_text(
+            "Por favor, digite a data e hora do agendamento para o TikTok.\n"
+            "Use o formato: `AAAA-MM-DD HH:MM`\n"
+            "Exemplo: `2026-05-24 18:00`",
+            parse_mode="Markdown"
+        )
+        return INPUT_TIKTOK_TIME
+
+async def handle_tiktok_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not user_is_approved(update):
+        return ConversationHandler.END
+        
+    raw_time = update.message.text.strip()
+    try:
+        dt = datetime.strptime(raw_time, "%Y-%m-%d %H:%M")
+        context.user_data["post_data"]["tiktok_scheduled_time"] = dt.strftime("%Y-%m-%d %H:%M:00")
+        
+        await show_final_confirmation_message(update.message, context)
+        return CONFIRM_POST
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Formato inválido! Por favor, utilize o formato correto:\n"
+            "`AAAA-MM-DD HH:MM` (ex: `2026-05-24 18:00`)",
+            parse_mode="Markdown"
+        )
+        return INPUT_TIKTOK_TIME
 
 async def show_final_confirmation(query, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Gera e exibe a mensagem de confirmação final de postagem."""
@@ -536,7 +632,10 @@ async def show_final_confirmation(query, context: ContextTypes.DEFAULT_TYPE) -> 
     if platforms["youtube_shorts"]:
         redes.append(f"• YouTube Shorts (Título: {post_data['shorts_title']})")
     if platforms["tiktok"]:
-        redes.append("• TikTok (Privado)")
+        priv = post_data.get("tiktok_privacy", "Public")
+        sched = post_data.get("tiktok_scheduled_time")
+        sched_text = f"Agendado para {sched}" if sched else "Postar Agora"
+        redes.append(f"• TikTok (Privacidade: {priv} | {sched_text})")
     if platforms["instagram"]:
         sched = post_data["instagram_scheduled_time"]
         sched_text = f"Agendado para {sched}" if sched else "Postar Agora"
@@ -570,7 +669,10 @@ async def show_final_confirmation_message(msg_object, context: ContextTypes.DEFA
     if platforms["youtube"]:
         redes.append(f"• YouTube (Título: {post_data['youtube_title']})")
     if platforms["tiktok"]:
-        redes.append("• TikTok (Privado)")
+        priv = post_data.get("tiktok_privacy", "Public")
+        sched = post_data.get("tiktok_scheduled_time")
+        sched_text = f"Agendado para {sched}" if sched else "Postar Agora"
+        redes.append(f"• TikTok (Privacidade: {priv} | {sched_text})")
     if platforms["instagram"]:
         sched = post_data["instagram_scheduled_time"]
         sched_text = f"Agendado para {sched}" if sched else "Postar Agora"
@@ -831,16 +933,22 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                 # Constrói a legenda do TikTok
                 tt_desc = caption_texto
                 
+                sched_time_full = post_data.get("tiktok_scheduled_time")
+
                 pub_id = await loop.run_in_executor(
                     None,
-                    tiktok_uploader.upload_video_to_tiktok,
+                    tiktok_service.upload_video_to_tiktok,
                     video_path,
                     tt_desc,
-                    "PRIVATE",
+                    post_data.get("tiktok_privacy", "Public"),
+                    sched_time_full,
+                    None, # Argumento de schedule_day inútil na nova lib, mas passamos None para compatibilidade de kwargs
                     progress_cb
                 )
                 db.update_post_status(db_post_id, "tiktok", "completed", url=f"publish_id:{pub_id}")
-                results_text += f"✅ <b>TikTok:</b> Enviado com sucesso (Privado)!\n\n"
+                priv_str = post_data.get("tiktok_privacy", "Public")
+                sched_str = f"Agendado: {sched_time_full}" if sched_time_full else "Postado Agora"
+                results_text += f"✅ <b>TikTok:</b> Enviado com sucesso ({priv_str} | {sched_str})!\n\n"
                 print(f"[PIPELINE LOG] TikTok enviado com sucesso! ID de Publicação: {pub_id}", flush=True)
             except Exception as e:
                 db.update_post_status(db_post_id, "tiktok", "failed", error=str(e))
@@ -975,6 +1083,15 @@ def main():
             ],
             INPUT_INSTAGRAM_TIME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_instagram_time)
+            ],
+            SELECT_TIKTOK_PRIVACY: [
+                CallbackQueryHandler(handle_tiktok_privacy, pattern="^tt_")
+            ],
+            SELECT_TIKTOK_SCHEDULING: [
+                CallbackQueryHandler(handle_tiktok_scheduling, pattern="^tt_")
+            ],
+            INPUT_TIKTOK_TIME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_tiktok_time)
             ],
             CONFIRM_POST: [
                 CallbackQueryHandler(execute_upload, pattern="^execute_upload$"),
