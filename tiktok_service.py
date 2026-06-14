@@ -112,11 +112,13 @@ def upload_video_to_tiktok(video_path, title, privacy_level="Public", schedule_t
     import sys
     from datetime import datetime
     import os
+    import shutil
     
-    # Injeta o caminho do Node.js do NVM no PATH, caso o bot esteja rodando via SystemD na VPS
-    nvm_node_path = "/home/mariadelurdesalvesdoprado/.nvm/versions/node/v20.20.2/bin"
-    if nvm_node_path not in os.environ.get("PATH", ""):
-        os.environ["PATH"] = f"{nvm_node_path}:{os.environ.get('PATH', '')}"
+    # Injeta o caminho do Node.js do NVM no PATH, caso o bot esteja rodando via SystemD na VPS (apenas se for Linux)
+    if os.name != 'nt':
+        nvm_node_path = "/home/mariadelurdesalvesdoprado/.nvm/versions/node/v20.20.2/bin"
+        if nvm_node_path not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = f"{nvm_node_path}{os.pathsep}{os.environ.get('PATH', '')}"
         
     # Adiciona a pasta do novo repositório ao PATH
     repo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maki_tiktok")
@@ -131,6 +133,16 @@ def upload_video_to_tiktok(video_path, title, privacy_level="Public", schedule_t
         from tiktok_uploader.tiktok import upload_video
         
         account_name = os.getenv("TIKTOK_ACCOUNT_NAME", "default_account")
+        
+        # Fallback para o nome do cookie
+        cookies_dir = os.path.join(repo_path, "CookiesDir")
+        expected_cookie = os.path.join(cookies_dir, f"tiktok_session-{account_name}.cookie")
+        tk_cookie = os.path.join(cookies_dir, f"TK_cookies_{account_name}.cookie")
+        
+        if not os.path.exists(expected_cookie) and os.path.exists(tk_cookie):
+            shutil.copy2(tk_cookie, expected_cookie)
+            print(f"[TIKTOK_API] Cookie copiado de {tk_cookie} para {expected_cookie}")
+
         print(f"[TIKTOK_API] Iniciando postagem via HTTP API. Privacidade: {privacy_level}, Agendamento: {schedule_time}")
         
         # O novo repo aceita visibility_type: 0 (Public) e 1 (Private)
@@ -145,6 +157,9 @@ def upload_video_to_tiktok(video_path, title, privacy_level="Public", schedule_t
             if future_seconds < 900:
                 print("[AVISO] O agendamento mínimo do TikTok é 20 minutos (usando limite mínimo para a chamada).")
                 future_seconds = 900
+                
+        if future_seconds > 0 and vis_type == 1:
+            raise Exception("O TikTok não permite agendar vídeos privados. Por favor, altere para Público ou remova o agendamento.")
             
         print(f"-> Parametros convertidos: Visibilidade={vis_type}, Agendamento em={future_seconds}s")
         
@@ -157,7 +172,7 @@ def upload_video_to_tiktok(video_path, title, privacy_level="Public", schedule_t
         )
         
         if result is False:
-            raise Exception("A nova biblioteca falhou ao realizar a postagem (Retornou False). Verifique o cookie gerado.")
+            raise Exception("A nova biblioteca falhou ao realizar a postagem (Retornou False). O cookie pode estar inválido/expirado, ou o vídeo é longo demais/inválido.")
             
         if progress_callback:
             progress_callback(100)

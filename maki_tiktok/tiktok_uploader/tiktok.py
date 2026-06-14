@@ -304,7 +304,7 @@ def upload_video(session_user, video, title, schedule_time=0, allow_comment=1, a
 				"single_post_feature_info": {
 					"text": title,
 					"text_extra": text_extra,
-					"markup_text": title,
+					"markup_text": markup_text,
 					"music_info": {},
 					"poster_delay": 0,
 				}
