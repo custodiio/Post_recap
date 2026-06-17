@@ -35,7 +35,7 @@ import instagram_uploader
 load_dotenv()
 
 # Estados da conversação
-SELECT_PLATFORMS, SELECT_YOUTUBE_TITLE, INPUT_YOUTUBE_TITLE_MANUAL, SELECT_SHORTS_TITLE, INPUT_SHORTS_TITLE_MANUAL, SELECT_INSTAGRAM_SCHEDULING, INPUT_INSTAGRAM_TIME, SELECT_TIKTOK_PRIVACY, SELECT_TIKTOK_SCHEDULING, INPUT_TIKTOK_TIME, CONFIRM_POST = range(11)
+SELECT_PLATFORMS, SELECT_YOUTUBE_TITLE, INPUT_YOUTUBE_TITLE_MANUAL, SELECT_SHORTS_TITLE, INPUT_SHORTS_TITLE_MANUAL, SELECT_INSTAGRAM_SCHEDULING, INPUT_INSTAGRAM_TIME, SELECT_TIKTOK_PRIVACY, SELECT_TIKTOK_SCHEDULING, INPUT_TIKTOK_TIME, CONFIRM_POST, INPUT_UNIFIED_SCHEDULE_TIME = range(12)
 
 # Lista de usuários aprovados (suporta IDs e Usernames)
 APPROVED_USERS = [u.strip() for u in (os.getenv("AUTHORIZED_TELEGRAM_USERS", "") + "," + os.getenv("APPROVED_USERS", "")).split(",") if u.strip()]
@@ -50,16 +50,242 @@ def user_is_approved(update: Update) -> bool:
         return True
     return (user.username in APPROVED_USERS) or (str(user.id) in APPROVED_USERS)
 
-# Worker de fila para agendamentos do Instagram (roda em segundo plano)
-def run_queue_worker():
+# Worker de fila para agendamentos (roda em segundo plano)
+def run_queue_worker(bot):
     print("Iniciando Worker de fila em segundo plano...")
     while True:
         try:
-            # Executa a função síncrona de processamento da fila
+            # Executa a função síncrona de processamento da fila do Instagram antigo
             instagram_uploader.process_instagram_queue()
         except Exception as e:
-            print(f"[ERRO] Erro na execução do Worker da fila: {e}")
+            print(f"[ERRO] Erro na execução do Worker da fila do Instagram: {e}")
+            
+        try:
+            # Executa o processamento das publicações locais programadas
+            process_scheduled_posts(bot)
+        except Exception as e:
+            print(f"[ERRO] Erro na execução do Worker de agendamentos locais: {e}")
+            
         time.sleep(60)
+
+def process_scheduled_posts(bot):
+    """
+    Worker que processa posts programados que venceram na tabela scheduled_posts.
+    Roda na thread em segundo plano.
+    """
+    jobs = db.get_pending_scheduled_posts()
+    if not jobs:
+        return
+        
+    print(f"[SCHEDULER WORKER] Encontrados {len(jobs)} agendamentos unificados para processar.")
+    # Usamos o event loop na thread secundária para operações assíncronas do Telethon/Telegram
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    for job in jobs:
+        post_id, video_path, thumb_yt, thumb_tt, title_yt, title_shorts, tiktok_caption, instagram_caption, post_yt, post_shorts, post_tt, post_ig, tiktok_privacy, sched_time = job
+        print(f"[SCHEDULER WORKER] Processando post #{post_id}...")
+        
+        # Marca como processing para não duplicar
+        db.update_scheduled_post_status(post_id, "processing")
+        
+        results = []
+        errors = []
+        
+        # 1. YouTube
+        if post_yt:
+            try:
+                print(f"[SCHEDULER WORKER] Enviando post #{post_id} para o YouTube...", flush=True)
+                tags_yt = ["anime", "recap"]
+                vid_id, vid_url = youtube_uploader.upload_video_to_youtube(
+                    video_path=video_path,
+                    title=title_yt,
+                    description=title_yt,
+                    tags=tags_yt,
+                    category_id="24",
+                    privacy_status="private",
+                    thumbnail_path=thumb_yt if thumb_yt and os.path.exists(thumb_yt) else None,
+                    progress_callback=None
+                )
+                results.append(f"YouTube (URL: {vid_url})")
+            except Exception as ex:
+                errors.append(f"YouTube: {ex}")
+                print(f"[SCHEDULER WORKER] Falha no YouTube: {ex}", flush=True)
+                
+        # 2. YouTube Shorts
+        if post_shorts:
+            try:
+                print(f"[SCHEDULER WORKER] Enviando post #{post_id} para o YouTube Shorts...", flush=True)
+                tags_yt = ["anime", "recap", "Shorts"]
+                vid_id, vid_url = youtube_uploader.upload_video_to_youtube(
+                    video_path=video_path,
+                    title=title_shorts,
+                    description=title_shorts + "\n\n#Shorts",
+                    tags=tags_yt,
+                    category_id="24",
+                    privacy_status="private",
+                    thumbnail_path=thumb_yt if thumb_yt and os.path.exists(thumb_yt) else None,
+                    progress_callback=None
+                )
+                results.append(f"YouTube Shorts (URL: {vid_url})")
+            except Exception as ex:
+                errors.append(f"YouTube Shorts: {ex}")
+                print(f"[SCHEDULER WORKER] Falha no YouTube Shorts: {ex}", flush=True)
+
+        # 3. TikTok
+        if post_tt:
+            try:
+                print(f"[SCHEDULER WORKER] Enviando post #{post_id} para o TikTok...", flush=True)
+                pub_id = tiktok_service.upload_video_to_tiktok(
+                    video_path=video_path,
+                    description=tiktok_caption,
+                    privacy_level=tiktok_privacy,
+                    schedule_time=None,
+                    schedule_day=None,
+                    progress_callback=None
+                )
+                results.append(f"TikTok (ID: {pub_id})")
+            except Exception as ex:
+                errors.append(f"TikTok: {ex}")
+                print(f"[SCHEDULER WORKER] Falha no TikTok: {ex}", flush=True)
+                
+        # 4. Instagram Reels
+        if post_ig:
+            try:
+                print(f"[SCHEDULER WORKER] Enviando post #{post_id} para o Instagram...", flush=True)
+                media_id, media_url = instagram_uploader.upload_reel_to_instagram(
+                    video_path=video_path,
+                    caption=instagram_caption,
+                    thumbnail_path=thumb_tt if thumb_tt and os.path.exists(thumb_tt) else None
+                )
+                results.append(f"Instagram (URL: {media_url})")
+            except Exception as ex:
+                errors.append(f"Instagram: {ex}")
+                print(f"[SCHEDULER WORKER] Falha no Instagram: {ex}", flush=True)
+
+        # Atualiza o status
+        if errors:
+            err_msg = "; ".join(errors)
+            db.update_scheduled_post_status(post_id, "failed", error=err_msg)
+            print(f"[SCHEDULER WORKER] Post #{post_id} falhou: {err_msg}", flush=True)
+            # Notifica usuários aprovados sobre falha
+            try:
+                notify_text = f"❌ <b>Falha ao processar Publicação Programada #{post_id}</b>\nData: {sched_time}\nErro: {err_msg}"
+                for user_id in APPROVED_USERS:
+                    if user_id.isdigit():
+                        loop.run_until_complete(bot.send_message(chat_id=int(user_id), text=notify_text, parse_mode="HTML"))
+            except Exception as notify_err:
+                print(f"[SCHEDULER WORKER] Falha ao enviar notificação de erro: {notify_err}", flush=True)
+        else:
+            db.update_scheduled_post_status(post_id, "completed")
+            print(f"[SCHEDULER WORKER] Post #{post_id} concluído com sucesso!", flush=True)
+            
+            # Limpa arquivos físicos
+            deleted_count = 0
+            for path in [video_path, thumb_yt, thumb_tt]:
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                        deleted_count += 1
+                    except Exception as ex:
+                        print(f"[SCHEDULER WORKER] Erro ao remover arquivo local: {path}: {ex}", flush=True)
+            
+            # Remove pasta post_dir
+            base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scheduled_posts")
+            post_dir = os.path.join(base_dir, f"post_{post_id}")
+            if os.path.exists(post_dir):
+                try: os.rmdir(post_dir)
+                except: pass
+                
+            # Notifica usuários aprovados sobre o sucesso
+            try:
+                res_str = "\n".join([f"• {r}" for r in results])
+                notify_text = f"✅ <b>Publicação Programada #{post_id} disparada com sucesso!</b>\n\n{res_str}"
+                for user_id in APPROVED_USERS:
+                    if user_id.isdigit():
+                        loop.run_until_complete(bot.send_message(chat_id=int(user_id), text=notify_text, parse_mode="HTML"))
+            except Exception as notify_err:
+                print(f"[SCHEDULER WORKER] Falha ao enviar notificação de sucesso: {notify_err}", flush=True)
+
+async def menu_programados(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Mostra os agendamentos pendentes ou falhos na fila local."""
+    query = update.callback_query
+    await query.answer()
+    
+    rows = db.get_all_pending_scheduled()
+    
+    if not rows:
+        text = "📭 Nenhuma publicação programada localmente na VM no momento."
+        keyboard = [[InlineKeyboardButton("Voltar", callback_data="back_to_menu")]]
+    else:
+        text = "📋 **Publicações Programadas na VM (Aguardando Disparo):**\n\n"
+        keyboard = []
+        for r in rows:
+            post_id, sched_time, title_yt, title_shorts, tiktok_caption, post_yt, post_shorts, post_tt, post_ig, status = r
+            
+            # Icones das redes
+            redes = []
+            if post_yt: redes.append("YT")
+            if post_shorts: redes.append("Shorts")
+            if post_tt: redes.append("TT")
+            if post_ig: redes.append("IG")
+            redes_str = "/".join(redes)
+            
+            # Título resumido para exibição
+            display_title = title_yt or title_shorts or (tiktok_caption[:30] + "..." if tiktok_caption else "Sem Título")
+            
+            status_emoji = "⏳" if status == "pending" else "❌"
+            
+            text += f"{status_emoji} **ID: {post_id}** | {sched_time} | {redes_str}\n💬 {display_title}\n\n"
+            
+            # Botão de exclusão para este ID
+            keyboard.append([InlineKeyboardButton(f"🗑️ Excluir ID {post_id}", callback_data=f"delete_prog_{post_id}")])
+            
+        keyboard.append([InlineKeyboardButton("Voltar ao Menu", callback_data="back_to_menu")])
+        
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    return SELECT_PLATFORMS
+
+async def delete_programado(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Exclui a publicação programada local e seus arquivos físicos na VM."""
+    query = update.callback_query
+    await query.answer()
+    
+    post_id = int(query.data.split("_")[-1])
+    
+    # Deleta do banco de dados e retorna os caminhos dos arquivos
+    row = db.delete_scheduled_post(post_id)
+    
+    # Deleta a pasta física e os arquivos
+    deleted_files = 0
+    if row:
+        video_path, thumb_yt, thumb_tt = row
+        # Deleta arquivos individuais se existirem
+        for path in [video_path, thumb_yt, thumb_tt]:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                    deleted_files += 1
+                except Exception as ex:
+                    print(f"[SCHEDULER ERR] Falha ao excluir arquivo local: {path}: {ex}", flush=True)
+                    
+        # Exclui a pasta post_dir
+        base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scheduled_posts")
+        post_dir = os.path.join(base_dir, f"post_{post_id}")
+        if os.path.exists(post_dir):
+            try:
+                os.rmdir(post_dir)
+            except Exception as ex:
+                print(f"[SCHEDULER ERR] Falha ao remover pasta post_dir: {post_dir}: {ex}", flush=True)
+                
+    await query.answer(f"Publicação ID {post_id} excluída com sucesso! ({deleted_files} arquivos removidos)", show_alert=True)
+    
+    # Retorna para a listagem
+    return await menu_programados(update, context)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia o bot e apresenta o menu principal."""
@@ -73,13 +299,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "youtube_title": "",
         "shorts_title": "",
         "instagram_scheduled_time": None,  # None se for postar agora
+        "tiktok_scheduled_time": None,
+        "unified_scheduled_time": None,
+        "is_scheduled_run": False,
         "guia": None,
         "files": None
     }
     
     keyboard = [
-        [InlineKeyboardButton("Postar Novo Vídeo", callback_data="menu_postar")],
-        [InlineKeyboardButton("Ver Fila do Instagram", callback_data="menu_fila")]
+        [InlineKeyboardButton("Postar Novo Vídeo 🚀", callback_data="menu_postar")],
+        [InlineKeyboardButton("Programar Publicação 📅", callback_data="menu_programar")],
+        [InlineKeyboardButton("Ver Publicações Programadas 📋", callback_data="menu_programados")],
+        [InlineKeyboardButton("Ver Fila do Instagram 📸", callback_data="menu_fila")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -99,13 +330,18 @@ async def show_main_menu_callback(update: Update, context: ContextTypes.DEFAULT_
         "youtube_title": "",
         "shorts_title": "",
         "instagram_scheduled_time": None,
+        "tiktok_scheduled_time": None,
+        "unified_scheduled_time": None,
+        "is_scheduled_run": False,
         "guia": None,
         "files": None
     }
     
     keyboard = [
-        [InlineKeyboardButton("Postar Novo Vídeo", callback_data="menu_postar")],
-        [InlineKeyboardButton("Ver Fila do Instagram", callback_data="menu_fila")]
+        [InlineKeyboardButton("Postar Novo Vídeo 🚀", callback_data="menu_postar")],
+        [InlineKeyboardButton("Programar Publicação 📅", callback_data="menu_programar")],
+        [InlineKeyboardButton("Ver Publicações Programadas 📋", callback_data="menu_programados")],
+        [InlineKeyboardButton("Ver Fila do Instagram 📸", callback_data="menu_fila")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -150,6 +386,23 @@ async def menu_postar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     query = update.callback_query
     await query.answer()
     
+    # Define se é uma publicação programada localmente
+    is_scheduled = (query.data == "menu_programar")
+    if "post_data" not in context.user_data or not context.user_data["post_data"]:
+        context.user_data["post_data"] = {
+            "platforms": {"youtube": False, "youtube_shorts": False, "tiktok": False, "instagram": False},
+            "youtube_title": "",
+            "shorts_title": "",
+            "instagram_scheduled_time": None,
+            "tiktok_scheduled_time": None,
+            "unified_scheduled_time": None,
+            "is_scheduled_run": is_scheduled,
+            "guia": None,
+            "files": None
+        }
+    else:
+        context.user_data["post_data"]["is_scheduled_run"] = is_scheduled
+        
     await query.edit_message_text("🔍 Conectando ao Google Drive e buscando informações do post...")
     
     try:
@@ -304,15 +557,62 @@ async def confirm_platforms(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     elif platforms["youtube_shorts"]:
         return await ask_shorts_title(query, context)
         
-    # Se não tem YouTube nem Shorts, mas tem Instagram, decide agendamento
+    # Se não tem YouTube nem Shorts, mas tem Instagram
     elif platforms["instagram"]:
-        return await ask_instagram_scheduling(query, context)
+        if context.user_data["post_data"].get("is_scheduled_run"):
+            if platforms["tiktok"]:
+                return await check_tiktok_workflow(update, context)
+            else:
+                return await ask_unified_schedule_time(query, context)
+        else:
+            return await ask_instagram_scheduling(query, context)
         
-    # Senão, vai direto para a confirmação final
+    # Senão, vai direto para a privacidade do TikTok ou confirmação final
     elif platforms["tiktok"]:
         return await check_tiktok_workflow(update, context)
     else:
-        return await show_final_confirmation(query, context)
+        if context.user_data["post_data"].get("is_scheduled_run"):
+            return await ask_unified_schedule_time(query, context)
+        else:
+            return await show_final_confirmation(query, context)
+
+async def route_after_titles(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Função auxiliar para direcionar para o agendamento IG, configurações do TikTok ou confirmação final."""
+    post_data = context.user_data["post_data"]
+    platforms = post_data["platforms"]
+    query = getattr(update, "callback_query", None)
+    message = getattr(update, "message", None)
+    
+    # Helper para responder adequadamente
+    async def reply_text_or_edit(text, reply_markup=None, parse_mode=None):
+        if query:
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+        elif message:
+            await message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+
+    if post_data.get("is_scheduled_run"):
+        if platforms["tiktok"]:
+            return await check_tiktok_workflow(update, context)
+        else:
+            return await ask_unified_schedule_time(query or message, context)
+    else:
+        if platforms["instagram"]:
+            keyboard = [
+                [InlineKeyboardButton("Postar Agora", callback_data="ig_now")],
+                [InlineKeyboardButton("Agendar Postagem", callback_data="ig_schedule")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            text = "🕐 **Agendamento do Instagram**\nComo deseja enviar o Reels para o Instagram?"
+            await reply_text_or_edit(text, reply_markup=reply_markup, parse_mode="Markdown")
+            return SELECT_INSTAGRAM_SCHEDULING
+        elif platforms["tiktok"]:
+            return await check_tiktok_workflow(update, context)
+        else:
+            if query:
+                return await show_final_confirmation(query, context)
+            else:
+                await show_final_confirmation_message(message, context)
+                return CONFIRM_POST
 
 async def handle_youtube_title_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Processa a escolha do título do YouTube a partir dos botões."""
@@ -334,13 +634,9 @@ async def handle_youtube_title_selection(update: Update, context: ContextTypes.D
     # Após definir o título do YouTube, verifica se precisa definir título do Shorts
     if context.user_data["post_data"]["platforms"]["youtube_shorts"]:
         return await ask_shorts_title(query, context)
-    elif context.user_data["post_data"]["platforms"]["instagram"]:
-        return await ask_instagram_scheduling(query, context)
-    elif context.user_data["post_data"]["platforms"]["tiktok"]:
-        return await check_tiktok_workflow(update, context)
     else:
-        return await show_final_confirmation(query, context)
-
+        return await route_after_titles(update, context)
+   
 async def handle_youtube_title_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recebe o título do YouTube digitado manualmente pelo usuário."""
     if not user_is_approved(update):
@@ -371,25 +667,8 @@ async def handle_youtube_title_manual(update: Update, context: ContextTypes.DEFA
             parse_mode="Markdown"
         )
         return SELECT_SHORTS_TITLE
-    elif context.user_data["post_data"]["platforms"]["instagram"]:
-        # Como veio por mensagem de texto (não callback), enviamos uma nova mensagem
-        keyboard = [
-            [InlineKeyboardButton("Postar Agora", callback_data="ig_now")],
-            [InlineKeyboardButton("Agendar Postagem", callback_data="ig_schedule")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            "🕐 **Agendamento do Instagram**\nComo deseja enviar o Reels para o Instagram?",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
-        return SELECT_INSTAGRAM_SCHEDULING
-    elif context.user_data["post_data"]["platforms"]["tiktok"]:
-        return await check_tiktok_workflow(update, context)
     else:
-        # Mostra confirmação
-        await show_final_confirmation_message(update.message, context)
-        return CONFIRM_POST
+        return await route_after_titles(update, context)
 
 async def ask_shorts_title(query, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Pergunta o título para o YouTube Shorts."""
@@ -442,12 +721,7 @@ async def handle_shorts_title_selection(update: Update, context: ContextTypes.DE
         return INPUT_SHORTS_TITLE_MANUAL
     
     # Próximo passo
-    if context.user_data["post_data"]["platforms"]["instagram"]:
-        return await ask_instagram_scheduling(query, context)
-    elif context.user_data["post_data"]["platforms"]["tiktok"]:
-        return await check_tiktok_workflow(update, context)
-    else:
-        return await show_final_confirmation(query, context)
+    return await route_after_titles(update, context)
 
 async def handle_shorts_title_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recebe o título do Shorts digitado manualmente."""
@@ -464,23 +738,7 @@ async def handle_shorts_title_manual(update: Update, context: ContextTypes.DEFAU
         title = f"{title} #Shorts"
     context.user_data["post_data"]["shorts_title"] = title
     
-    if context.user_data["post_data"]["platforms"]["instagram"]:
-        keyboard = [
-            [InlineKeyboardButton("Postar Agora", callback_data="ig_now")],
-            [InlineKeyboardButton("Agendar Postagem", callback_data="ig_schedule")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            "🕐 **Agendamento do Instagram**\nComo deseja enviar o Reels para o Instagram?",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
-        return SELECT_INSTAGRAM_SCHEDULING
-    elif context.user_data["post_data"]["platforms"]["tiktok"]:
-        return await check_tiktok_workflow(update, context)
-    else:
-        await show_final_confirmation_message(update.message, context)
-        return CONFIRM_POST
+    return await route_after_titles(update, context)
 
 async def ask_instagram_scheduling(query, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Pergunta sobre o agendamento do Instagram."""
@@ -574,6 +832,9 @@ async def handle_tiktok_privacy(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "tt_private":
         context.user_data["post_data"]["tiktok_privacy"] = "Private"
         
+    if context.user_data["post_data"].get("is_scheduled_run"):
+        return await ask_unified_schedule_time(query, context)
+        
     text = "🕐 **Agendamento do TikTok**\nComo deseja enviar o vídeo para o TikTok?"
     keyboard = [
         [
@@ -621,6 +882,37 @@ async def handle_tiktok_time(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return INPUT_TIKTOK_TIME
 
+async def ask_unified_schedule_time(query, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Solicita a data e hora unificada para o agendamento local."""
+    text = (
+        "🕐 **Programação Unificada (Salvar Local na VM)**\n\n"
+        "Digite a data e hora que deseja realizar o disparo nas redes sociais selecionadas.\n"
+        "Use o formato: `AAAA-MM-DD HH:MM`\n"
+        "Exemplo: `2026-06-25 18:00`"
+    )
+    await query.edit_message_text(text, parse_mode="Markdown")
+    return INPUT_UNIFIED_SCHEDULE_TIME
+
+async def handle_unified_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recebe a data e hora unificada do agendamento."""
+    if not user_is_approved(update):
+        return ConversationHandler.END
+        
+    raw_time = update.message.text.strip()
+    try:
+        dt = datetime.strptime(raw_time, "%Y-%m-%d %H:%M")
+        context.user_data["post_data"]["unified_scheduled_time"] = dt.strftime("%Y-%m-%d %H:%M:00")
+        
+        await show_final_confirmation_message(update.message, context)
+        return CONFIRM_POST
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Formato inválido! Por favor, utilize o formato correto:\n"
+            "`AAAA-MM-DD HH:MM` (ex: `2026-06-25 18:00`)",
+            parse_mode="Markdown"
+        )
+        return INPUT_UNIFIED_SCHEDULE_TIME
+
 async def show_final_confirmation(query, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Gera e exibe a mensagem de confirmação final de postagem."""
     post_data = context.user_data["post_data"]
@@ -643,12 +935,22 @@ async def show_final_confirmation(query, context: ContextTypes.DEFAULT_TYPE) -> 
         
     redes_str = "\n".join(redes)
     
-    text = (
-        "📝 **Resumo da Postagem:**\n\n"
-        f"As mídias serão baixadas do Google Drive e enviadas para:\n"
-        f"{redes_str}\n\n"
-        "Confirma o envio?"
-    )
+    if post_data.get("is_scheduled_run"):
+        sched = post_data.get("unified_scheduled_time")
+        text = (
+            "📝 **Resumo da Programação Unificada:**\n\n"
+            f"As mídias serão baixadas do Google Drive e armazenadas localmente para disparo em:\n"
+            f"📅 **{sched}**\n\n"
+            f"**Redes sociais ativas:**\n{redes_str}\n\n"
+            "Confirma a programação?"
+        )
+    else:
+        text = (
+            "📝 **Resumo da Postagem:**\n\n"
+            f"As mídias serão baixadas do Google Drive e enviadas para:\n"
+            f"{redes_str}\n\n"
+            "Confirma o envio?"
+        )
     
     keyboard = [
         [
@@ -668,6 +970,8 @@ async def show_final_confirmation_message(msg_object, context: ContextTypes.DEFA
     redes = []
     if platforms["youtube"]:
         redes.append(f"• YouTube (Título: {post_data['youtube_title']})")
+    if platforms["youtube_shorts"]:
+        redes.append(f"• YouTube Shorts (Título: {post_data['shorts_title']})")
     if platforms["tiktok"]:
         priv = post_data.get("tiktok_privacy", "Public")
         sched = post_data.get("tiktok_scheduled_time")
@@ -680,12 +984,22 @@ async def show_final_confirmation_message(msg_object, context: ContextTypes.DEFA
         
     redes_str = "\n".join(redes)
     
-    text = (
-        "📝 **Resumo da Postagem:**\n\n"
-        f"As mídias serão baixadas do Google Drive e enviadas para:\n"
-        f"{redes_str}\n\n"
-        "Confirma o envio?"
-    )
+    if post_data.get("is_scheduled_run"):
+        sched = post_data.get("unified_scheduled_time")
+        text = (
+            "📝 **Resumo da Programação Unificada:**\n\n"
+            f"As mídias serão baixadas do Google Drive e armazenadas localmente para disparo em:\n"
+            f"📅 **{sched}**\n\n"
+            f"**Redes sociais ativas:**\n{redes_str}\n\n"
+            "Confirma a programação?"
+        )
+    else:
+        text = (
+            "📝 **Resumo da Postagem:**\n\n"
+            f"As mídias serão baixadas do Google Drive e enviadas para:\n"
+            f"{redes_str}\n\n"
+            "Confirma o envio?"
+        )
     
     keyboard = [
         [
@@ -705,12 +1019,165 @@ async def execute_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     platforms = post_data["platforms"]
     guia = post_data["guia"]
     
-    status_msg = await query.edit_message_text("📥 Iniciando download dos arquivos do Google Drive...")
-    
-    # Executa a postagem em segundo plano para não travar a UI do Telegram
-    asyncio.create_task(run_upload_pipeline(status_msg, platforms, post_data, guia))
+    if post_data.get("is_scheduled_run"):
+        status_msg = await query.edit_message_text("⏳ Criando agendamento no banco de dados local...")
+        asyncio.create_task(run_local_schedule_pipeline(status_msg, platforms, post_data, guia))
+    else:
+        status_msg = await query.edit_message_text("📥 Iniciando download dos arquivos do Google Drive...")
+        # Executa a postagem em segundo plano para não travar a UI do Telegram
+        asyncio.create_task(run_upload_pipeline(status_msg, platforms, post_data, guia))
     
     return ConversationHandler.END
+
+async def run_local_schedule_pipeline(status_msg, platforms, post_data, guia):
+    """Pipeline para baixar o vídeo do Drive e programar na fila local da VM."""
+    loop = asyncio.get_running_loop()
+    
+    # Helper assíncrono para atualizar o status
+    async def safe_edit_status(text, parse_mode=None):
+        try:
+            await status_msg.edit_text(text, parse_mode=parse_mode)
+        except Exception as edit_err:
+            print(f"[TELEGRAM WARNING] Falha ao atualizar mensagem: {edit_err}", flush=True)
+
+    # Helper para progresso do download
+    def make_progress_callback(msg, prefix):
+        state = {"last_percent": -1, "last_update_time": 0.0}
+        def progress_callback(percent):
+            now = time.time()
+            time_diff = now - state["last_update_time"]
+            if percent == 0 or percent == 100 or (percent - state["last_percent"] >= 5 and time_diff >= 5):
+                state["last_percent"] = percent
+                state["last_update_time"] = now
+                async def edit_msg():
+                    try: await msg.edit_text(f"{prefix} {percent}%")
+                    except: pass
+                asyncio.run_coroutine_threadsafe(edit_msg(), loop)
+        return progress_callback
+
+    post_id = None
+    temp_paths = {}
+    try:
+        # 1. Registrar agendamento inicial no SQLite (em estado 'downloading')
+        yt_title = post_data.get("youtube_title", "")
+        shorts_title = post_data.get("shorts_title", "")
+        tt_title = guia.get("titulo_principal", "")
+        
+        # Constrói legendas
+        def get_formatted_caption(g):
+            if g.get("tiktok_guia"):
+                return g["tiktok_guia"]
+            hook = g.get("tiktok_titulo") or g.get("titulo_principal") or "Você teria coragem de assistir até o final? 😳"
+            titulo_anime = g.get("tiktok_titulo_anime") or g.get("titulo_anime") or "Release That Witch"
+            sinopse = g.get("tiktok_sinopse") or g.get("sinopse") or "Um resumo incrível!"
+            tags_list = g.get("instagram_hashtags") or g.get("tiktok_hashtags") or ["#anime", "#recap", "#viral"]
+            tags_str = " ".join(tags_list[:5]) if isinstance(tags_list, list) else tags_list
+            return f"{hook}\n\nTitulo: {titulo_anime}\n\nSinopse: {sinopse}\n\n{tags_str}"
+            
+        caption_texto = get_formatted_caption(guia)
+        sched_time = post_data.get("unified_scheduled_time")
+        
+        post_id = db.add_scheduled_post(
+            video_path="",
+            thumbnail_youtube="",
+            thumbnail_tiktok="",
+            title_youtube=yt_title if platforms["youtube"] else "",
+            title_shorts=shorts_title if platforms["youtube_shorts"] else "",
+            tiktok_caption=caption_texto if platforms["tiktok"] else "",
+            instagram_caption=caption_texto if platforms["instagram"] else "",
+            post_youtube=platforms["youtube"],
+            post_shorts=platforms["youtube_shorts"],
+            post_tiktok=platforms["tiktok"],
+            post_instagram=platforms["instagram"],
+            tiktok_privacy=post_data.get("tiktok_privacy", "Public"),
+            scheduled_time=sched_time
+        )
+        
+        # Atualiza status inicial
+        db.update_scheduled_post_status(post_id, "downloading")
+        
+        # 2. Criar a pasta física para salvar os arquivos
+        base_scheduled_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scheduled_posts")
+        os.makedirs(base_scheduled_dir, exist_ok=True)
+        
+        post_dir = os.path.join(base_scheduled_dir, f"post_{post_id}")
+        os.makedirs(post_dir, exist_ok=True)
+        
+        # 3. Baixar arquivos do Drive
+        folder_id = post_data.get("folder_id")
+        drive_files = await loop.run_in_executor(None, drive_manager.list_files_in_folder, folder_id)
+        
+        files_to_download = {
+            "video_final.mp4": ("video.mp4", "Vídeo Principal"),
+            "thumbnail_youtube.png": ("thumb_yt.png", "Capa YouTube"),
+            "thumbnail_tiktok.png": ("thumb_tt.png", "Capa TikTok")
+        }
+        
+        found_files = {}
+        for df in drive_files:
+            if df["name"] in files_to_download:
+                found_files[df["name"]] = df["id"]
+                
+        for filename, (local_name, display_name) in files_to_download.items():
+            if filename == "thumbnail_youtube.png" and not platforms["youtube"] and not platforms["youtube_shorts"]:
+                continue
+            if filename == "thumbnail_tiktok.png" and not platforms["tiktok"] and not platforms["instagram"]:
+                continue
+                
+            local_path = os.path.join(post_dir, local_name)
+            file_id = found_files.get(filename)
+            
+            if file_id:
+                progress_cb = make_progress_callback(status_msg, f"📥 Baixando {display_name}:")
+                await safe_edit_status(f"📥 Baixando {display_name}: 0%")
+                await loop.run_in_executor(None, drive_manager.download_file_by_id, file_id, local_path, progress_cb)
+                temp_paths[local_name] = local_path
+            else:
+                # Tenta baixar alternativamente por caminho
+                try:
+                    alt_path = f"KAGGLE/PIPELINE/FINAL/{filename}"
+                    progress_cb = make_progress_callback(status_msg, f"📥 Buscando {display_name}:")
+                    await safe_edit_status(f"📥 Buscando {display_name} via caminho alternativo...")
+                    await loop.run_in_executor(None, drive_manager.download_file_by_path, alt_path, local_path, progress_cb)
+                    temp_paths[local_name] = local_path
+                except Exception as path_err:
+                    print(f"[SCHEDULER] Não foi possível baixar opcional {filename}: {path_err}", flush=True)
+
+        video_path = temp_paths.get("video.mp4")
+        if not video_path or not os.path.exists(video_path):
+            raise Exception("Vídeo final (video_final.mp4) não pôde ser baixado do Drive.")
+            
+        # 4. Atualizar o banco de dados com os caminhos corretos e definir status como 'pending'
+        thumb_yt = temp_paths.get("thumb_yt.png", "")
+        thumb_tt = temp_paths.get("thumb_tt.png", "")
+        
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+        UPDATE scheduled_posts
+        SET video_path = ?, thumbnail_youtube = ?, thumbnail_tiktok = ?, status = 'pending'
+        WHERE id = ?
+        """, (video_path, thumb_yt, thumb_tt, post_id))
+        conn.commit()
+        conn.close()
+        
+        # 5. Informar sucesso
+        success_text = (
+            "✅ <b>Publicação Programada com Sucesso!</b>\n\n"
+            f"📅 <b>Data de Disparo:</b> <code>{sched_time}</code>\n"
+            "📂 Vídeo e imagens foram baixados do Drive e armazenados localmente na VM para segurança.\n\n"
+            "Você pode gerenciar e excluir esta publicação no menu <b>Publicações Programadas</b>."
+        )
+        await safe_edit_status(success_text, parse_mode="HTML")
+        
+    except Exception as e:
+        error_msg = f"❌ Falha ao criar agendamento local: {e}"
+        print(f"[SCHEDULER ERR] {e}", flush=True)
+        await safe_edit_status(error_msg)
+        if post_id:
+            try:
+                db.update_scheduled_post_status(post_id, "failed", error=error_msg)
+            except: pass
 
 async def run_upload_pipeline(status_msg, platforms, post_data, guia):
     """Pipeline de download e upload assíncrono com barra de progresso no Telegram."""
@@ -1053,12 +1520,18 @@ def main():
         entry_points=[
             CommandHandler("start", start),
             CallbackQueryHandler(menu_postar, pattern="^menu_postar$"),
+            CallbackQueryHandler(menu_postar, pattern="^menu_programar$"),
+            CallbackQueryHandler(menu_programados, pattern="^menu_programados$"),
+            CallbackQueryHandler(delete_programado, pattern="^delete_prog_\\d+$"),
             CallbackQueryHandler(menu_fila, pattern="^menu_fila$"),
             CallbackQueryHandler(show_main_menu_callback, pattern="^back_to_menu$"),
         ],
         states={
             SELECT_PLATFORMS: [
                 CallbackQueryHandler(menu_postar, pattern="^menu_postar$"),
+                CallbackQueryHandler(menu_postar, pattern="^menu_programar$"),
+                CallbackQueryHandler(menu_programados, pattern="^menu_programados$"),
+                CallbackQueryHandler(delete_programado, pattern="^delete_prog_\\d+$"),
                 CallbackQueryHandler(menu_fila, pattern="^menu_fila$"),
                 CallbackQueryHandler(toggle_platform, pattern="^toggle_"),
                 CallbackQueryHandler(confirm_platforms, pattern="^confirm_platforms$"),
@@ -1093,6 +1566,9 @@ def main():
             INPUT_TIKTOK_TIME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_tiktok_time)
             ],
+            INPUT_UNIFIED_SCHEDULE_TIME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unified_schedule_time)
+            ],
             CONFIRM_POST: [
                 CallbackQueryHandler(execute_upload, pattern="^execute_upload$"),
                 CallbackQueryHandler(show_main_menu_callback, pattern="^back_to_menu$")
@@ -1107,7 +1583,7 @@ def main():
     app.add_handler(conv_handler)
     
     # Inicia o worker de fila em segundo plano em uma thread separada
-    worker_thread = threading.Thread(target=run_queue_worker, daemon=True)
+    worker_thread = threading.Thread(target=run_queue_worker, args=(app.bot,), daemon=True)
     worker_thread.start()
     
     while True:

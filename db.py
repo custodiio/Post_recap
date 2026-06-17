@@ -44,6 +44,29 @@ def init_db():
     )
     """)
     
+    # Tabela de publicações programadas locais (vídeos salvos na VM)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS scheduled_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        video_path TEXT,
+        thumbnail_youtube TEXT,
+        thumbnail_tiktok TEXT,
+        title_youtube TEXT,
+        title_shorts TEXT,
+        tiktok_caption TEXT,
+        instagram_caption TEXT,
+        post_youtube INTEGER DEFAULT 0,
+        post_shorts INTEGER DEFAULT 0,
+        post_tiktok INTEGER DEFAULT 0,
+        post_instagram INTEGER DEFAULT 0,
+        tiktok_privacy TEXT,
+        scheduled_time TEXT, -- Formato YYYY-MM-DD HH:MM:SS
+        status TEXT DEFAULT 'pending', -- 'pending', 'processing', 'completed', 'failed'
+        error_message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    
     conn.commit()
     conn.close()
 
@@ -128,6 +151,83 @@ def update_queue_status(queue_id, status, error=None):
     """, (status, error, queue_id))
     conn.commit()
     conn.close()
+
+def add_scheduled_post(video_path, thumbnail_youtube, thumbnail_tiktok,
+                       title_youtube, title_shorts, tiktok_caption, instagram_caption,
+                       post_youtube, post_shorts, post_tiktok, post_instagram,
+                       tiktok_privacy, scheduled_time):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO scheduled_posts (
+        video_path, thumbnail_youtube, thumbnail_tiktok,
+        title_youtube, title_shorts, tiktok_caption, instagram_caption,
+        post_youtube, post_shorts, post_tiktok, post_instagram,
+        tiktok_privacy, scheduled_time
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (video_path, thumbnail_youtube, thumbnail_tiktok,
+          title_youtube, title_shorts, tiktok_caption, instagram_caption,
+          int(post_youtube), int(post_shorts), int(post_tiktok), int(post_instagram),
+          tiktok_privacy, scheduled_time))
+    post_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return post_id
+
+def get_pending_scheduled_posts():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT id, video_path, thumbnail_youtube, thumbnail_tiktok,
+           title_youtube, title_shorts, tiktok_caption, instagram_caption,
+           post_youtube, post_shorts, post_tiktok, post_instagram,
+           tiktok_privacy, scheduled_time
+    FROM scheduled_posts
+    WHERE status = 'pending' AND datetime(scheduled_time) <= datetime('now', 'localtime')
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def update_scheduled_post_status(post_id, status, error=None):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    UPDATE scheduled_posts
+    SET status = ?, error_message = ?
+    WHERE id = ?
+    """, (status, error, post_id))
+    conn.commit()
+    conn.close()
+
+def get_all_pending_scheduled():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT id, scheduled_time, title_youtube, title_shorts, tiktok_caption,
+           post_youtube, post_shorts, post_tiktok, post_instagram, status
+    FROM scheduled_posts
+    WHERE status = 'pending' OR status = 'failed'
+    ORDER BY scheduled_time ASC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def delete_scheduled_post(post_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT video_path, thumbnail_youtube, thumbnail_tiktok
+    FROM scheduled_posts
+    WHERE id = ?
+    """, (post_id,))
+    row = cursor.fetchone()
+    if row:
+        cursor.execute("DELETE FROM scheduled_posts WHERE id = ?", (post_id,))
+        conn.commit()
+    conn.close()
+    return row
 
 # Inicializar o banco de dados ao importar
 init_db()
