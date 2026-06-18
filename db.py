@@ -63,9 +63,16 @@ def init_db():
         scheduled_time TEXT, -- Formato YYYY-MM-DD HH:MM:SS
         status TEXT DEFAULT 'pending', -- 'pending', 'processing', 'completed', 'failed'
         error_message TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        shorts_description TEXT
     )
     """)
+    
+    # Migração para bancos existentes: tenta adicionar a coluna shorts_description se não existir
+    try:
+        cursor.execute("ALTER TABLE scheduled_posts ADD COLUMN shorts_description TEXT")
+    except sqlite3.OperationalError:
+        pass
     
     conn.commit()
     conn.close()
@@ -155,7 +162,7 @@ def update_queue_status(queue_id, status, error=None):
 def add_scheduled_post(video_path, thumbnail_youtube, thumbnail_tiktok,
                        title_youtube, title_shorts, tiktok_caption, instagram_caption,
                        post_youtube, post_shorts, post_tiktok, post_instagram,
-                       tiktok_privacy, scheduled_time):
+                       tiktok_privacy, scheduled_time, shorts_description=""):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -163,12 +170,12 @@ def add_scheduled_post(video_path, thumbnail_youtube, thumbnail_tiktok,
         video_path, thumbnail_youtube, thumbnail_tiktok,
         title_youtube, title_shorts, tiktok_caption, instagram_caption,
         post_youtube, post_shorts, post_tiktok, post_instagram,
-        tiktok_privacy, scheduled_time
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        tiktok_privacy, scheduled_time, shorts_description
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (video_path, thumbnail_youtube, thumbnail_tiktok,
           title_youtube, title_shorts, tiktok_caption, instagram_caption,
           int(post_youtube), int(post_shorts), int(post_tiktok), int(post_instagram),
-          tiktok_privacy, scheduled_time))
+          tiktok_privacy, scheduled_time, shorts_description))
     post_id = cursor.lastrowid
     conn.commit()
     conn.close()
@@ -181,7 +188,7 @@ def get_pending_scheduled_posts():
     SELECT id, video_path, thumbnail_youtube, thumbnail_tiktok,
            title_youtube, title_shorts, tiktok_caption, instagram_caption,
            post_youtube, post_shorts, post_tiktok, post_instagram,
-           tiktok_privacy, scheduled_time
+           tiktok_privacy, scheduled_time, shorts_description
     FROM scheduled_posts
     WHERE status = 'pending' AND datetime(scheduled_time) <= datetime('now', 'localtime')
     """)

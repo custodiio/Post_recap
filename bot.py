@@ -86,7 +86,7 @@ def process_scheduled_posts(bot):
         asyncio.set_event_loop(loop)
     
     for job in jobs:
-        post_id, video_path, thumb_yt, thumb_tt, title_yt, title_shorts, tiktok_caption, instagram_caption, post_yt, post_shorts, post_tt, post_ig, tiktok_privacy, sched_time = job
+        post_id, video_path, thumb_yt, thumb_tt, title_yt, title_shorts, tiktok_caption, instagram_caption, post_yt, post_shorts, post_tt, post_ig, tiktok_privacy, sched_time, shorts_description = job
         print(f"[SCHEDULER WORKER] Processando post #{post_id}...")
         
         # Marca como processing para não duplicar
@@ -120,10 +120,18 @@ def process_scheduled_posts(bot):
             try:
                 print(f"[SCHEDULER WORKER] Enviando post #{post_id} para o YouTube Shorts...", flush=True)
                 tags_yt = ["anime", "recap", "Shorts"]
+                
+                # Se não temos shorts_description vindo do banco, faz o fallback
+                desc_shorts_final = shorts_description
+                if not desc_shorts_final:
+                    desc_shorts_final = tiktok_caption if tiktok_caption else (instagram_caption if instagram_caption else title_shorts)
+                    if "#shorts" not in desc_shorts_final.lower():
+                        desc_shorts_final = f"{desc_shorts_final}\n\n#Shorts"
+
                 vid_id, vid_url = youtube_uploader.upload_video_to_youtube(
                     video_path=video_path,
                     title=title_shorts,
-                    description=title_shorts + "\n\n#Shorts",
+                    description=desc_shorts_final,
                     tags=tags_yt,
                     category_id="24",
                     privacy_status="private",
@@ -141,7 +149,7 @@ def process_scheduled_posts(bot):
                 print(f"[SCHEDULER WORKER] Enviando post #{post_id} para o TikTok...", flush=True)
                 pub_id = tiktok_service.upload_video_to_tiktok(
                     video_path=video_path,
-                    description=tiktok_caption,
+                    title=tiktok_caption,
                     privacy_level=tiktok_privacy,
                     schedule_time=None,
                     schedule_day=None,
@@ -1077,6 +1085,17 @@ async def run_local_schedule_pipeline(status_msg, platforms, post_data, guia):
         caption_texto = get_formatted_caption(guia)
         sched_time = post_data.get("unified_scheduled_time")
         
+        # Obtém as hashtags do YouTube do guia para integrar no Shorts
+        yt_hashtags = guia.get("hashtags_youtube", [])
+        if isinstance(yt_hashtags, list):
+            yt_hashtags_str = " ".join(yt_hashtags)
+        else:
+            yt_hashtags_str = str(yt_hashtags)
+            
+        shorts_desc = f"{caption_texto}\n\n{yt_hashtags_str}"
+        if "#shorts" not in shorts_desc.lower():
+            shorts_desc = f"{shorts_desc}\n\n#Shorts"
+            
         post_id = db.add_scheduled_post(
             video_path="",
             thumbnail_youtube="",
@@ -1090,7 +1109,8 @@ async def run_local_schedule_pipeline(status_msg, platforms, post_data, guia):
             post_tiktok=platforms["tiktok"],
             post_instagram=platforms["instagram"],
             tiktok_privacy=post_data.get("tiktok_privacy", "Public"),
-            scheduled_time=sched_time
+            scheduled_time=sched_time,
+            shorts_description=shorts_desc
         )
         
         # Atualiza status inicial
@@ -1359,10 +1379,17 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
             progress_cb = make_telegram_progress_callback(status_msg, "📤 Enviando YouTube Shorts:")
             await safe_edit_status("📤 Enviando YouTube Shorts: 0%")
             try:
-                desc_yt = guia.get("descricao", "")
-                # Adiciona #Shorts na descrição também para garantir detecção
+                # Constrói a descrição do Shorts mesclando a legenda do TikTok com hashtags do YouTube
+                yt_hashtags = guia.get("hashtags_youtube", [])
+                if isinstance(yt_hashtags, list):
+                    yt_hashtags_str = " ".join(yt_hashtags)
+                else:
+                    yt_hashtags_str = str(yt_hashtags)
+                
+                desc_yt = f"{caption_texto}\n\n{yt_hashtags_str}"
                 if "#shorts" not in desc_yt.lower():
                     desc_yt = f"{desc_yt}\n\n#Shorts"
+                    
                 tags_yt = [t.strip() for t in guia.get("tags_youtube", "").split(",") if t.strip()]
                 if "Shorts" not in tags_yt:
                     tags_yt.append("Shorts")

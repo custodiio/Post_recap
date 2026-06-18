@@ -9,3 +9,4 @@ requests>=2.32.5
 pillow>=11.3.0
 playwright>=1.49.1
 playwright-stealth>=1.0.6
+fake-useragent>=1.5.1
