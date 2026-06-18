@@ -10,3 +10,6 @@ pillow>=11.3.0
 playwright>=1.49.1
 playwright-stealth>=1.0.6
 fake-useragent>=1.5.1
+selenium>=4.18
+yt-dlp
+undetected-chromedriver @ git+https://github.com/dustinfarris/undetected-chromedriver.git@b6b58a1eecdadf37e1b159cf2b8138047a0ecc3f
