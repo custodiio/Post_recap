@@ -95,150 +95,85 @@ class ProgressFile:
     def close(self):
         self.file.close()
 
-def upload_video_to_tiktok_official(video_path, title, privacy_level="PRIVATE", progress_callback=None):
-    """
-    (MÉTODO ANTIGO / API OFICIAL) Realiza o envio de um vídeo para o TikTok (Direct Post) usando upload em chunks.
-    O vídeo é enviado como privado por padrão (PRIVATE).
-    Retorna o publish_id gerado pelo TikTok.
-    """
-    access_token = get_valid_tiktok_token()
-
 def upload_video_to_tiktok(video_path, title, privacy_level="Public", schedule_time=None, schedule_day=None, progress_callback=None):
     """
-    Novo método de upload 100% via API HTTP (makiisthenes/TiktokAutoUploader).
-    Suporta configuração de privacidade (Public: 0, Private: 1) e agendamento customizado (em segundos).
-    O schedule_time agora passa a receber diretamente a string original do agendamento 'AAAA-MM-DD HH:MM:SS' para cálculo correto de segundos no futuro.
+    Realiza o envio de um vídeo para o TikTok (Direct Post) usando a API Oficial v2 (upload em chunks).
+    O vídeo é postado diretamente no perfil do criador.
     """
-    import sys
-    from datetime import datetime
     import os
-    import shutil
+    import requests
     
-    # Injeta o caminho do Node.js do NVM no PATH, caso o bot esteja rodando via SystemD na VPS (apenas se for Linux)
-    if os.name != 'nt':
-        nvm_node_path = "/home/mariadelurdesalvesdoprado/.nvm/versions/node/v20.20.2/bin"
-        if nvm_node_path not in os.environ.get("PATH", ""):
-            os.environ["PATH"] = f"{nvm_node_path}{os.pathsep}{os.environ.get('PATH', '')}"
+    # 1. Obter token de acesso
+    access_token = get_valid_tiktok_token()
+    if not access_token:
+        raise Exception("[ERRO] Token de acesso do TikTok não encontrado ou inválido.")
         
-    # Adiciona a pasta do novo repositório ao PATH
-    repo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maki_tiktok")
-    if repo_path not in sys.path:
-        sys.path.append(repo_path)
+    # 2. Mapear privacidade
+    privacy_map = {
+        "public": "PUBLIC_TO_EVERYONE",
+        "friends": "MUTUAL_FOLLOW_FRIENDS",
+        "private": "SELF_ONLY"
+    }
+    selected_privacy = privacy_map.get(privacy_level.lower(), "PUBLIC_TO_EVERYONE")
     
-    # Troca de diretório temporária para que a biblioteca consiga achar a pasta CookiesDir relativa a ela
-    orig_cwd = os.getcwd()
-    os.chdir(repo_path)
-    
-    try:
-        from tiktok_uploader.tiktok import upload_video
-        
-        account_name = os.getenv("TIKTOK_ACCOUNT_NAME", "default_account")
-        
-        # Fallback para o nome do cookie
-        cookies_dir = os.path.join(repo_path, "CookiesDir")
-        expected_cookie = os.path.join(cookies_dir, f"tiktok_session-{account_name}.cookie")
-        tk_cookie = os.path.join(cookies_dir, f"TK_cookies_{account_name}.cookie")
-        
-        if not os.path.exists(expected_cookie) and os.path.exists(tk_cookie):
-            shutil.copy2(tk_cookie, expected_cookie)
-            print(f"[TIKTOK_API] Cookie copiado de {tk_cookie} para {expected_cookie}")
-
-        print(f"[TIKTOK_API] Iniciando postagem via HTTP API. Privacidade: {privacy_level}, Agendamento: {schedule_time}")
-        
-        # O novo repo aceita visibility_type: 0 (Public) e 1 (Private)
-        vis_type = 1 if privacy_level.lower() == "private" else 0
-        
-        # O novo repo aceita schedule_time como a quantidade de SEGUNDOS a partir de agora.
-        future_seconds = 0
-        if schedule_time:
-            dt_obj = datetime.strptime(schedule_time, "%Y-%m-%d %H:%M:%S")
-            diff = dt_obj - datetime.now()
-            future_seconds = int(diff.total_seconds())
-            if future_seconds < 900:
-                print("[AVISO] O agendamento mínimo do TikTok é 20 minutos (usando limite mínimo para a chamada).")
-                future_seconds = 900
-                
-        if future_seconds > 0 and vis_type == 1:
-            raise Exception("O TikTok não permite agendar vídeos privados. Por favor, altere para Público ou remova o agendamento.")
-            
-        print(f"-> Parametros convertidos: Visibilidade={vis_type}, Agendamento em={future_seconds}s")
-        
-        result = upload_video(
-            session_user=account_name,
-            video=video_path,
-            title=title,
-            schedule_time=future_seconds,
-            visibility_type=vis_type
-        )
-        
-        if result is False:
-            raise Exception("A nova biblioteca falhou ao realizar a postagem (Retornou False). O cookie pode estar inválido/expirado, ou o vídeo é longo demais/inválido.")
-            
-        if progress_callback:
-            progress_callback(100)
-            
-        # O script original da nova biblioteca retorna True em sucesso. Como não há um "publish_id" claro, enviamos um placeholder.
-        return "api_posted_success"
-        
-    finally:
-        os.chdir(orig_cwd)
+    # 3. Calcular tamanho e quantidade de chunks
     video_size = os.path.getsize(video_path)
-    
-    # Configurações de chunks para o TikTok (conforme documentação oficial)
-    # 1. Cada chunk deve ter entre 5MB e 64MB (exceto o último, que pode ter até 128MB)
-    # 2. O total_chunk_count deve ser igual a video_size // chunk_size (divisão inteira arredondada para baixo)
-    MAX_SINGLE_CHUNK = 64 * 1000 * 1000  # 64MB
+    MAX_SINGLE_CHUNK = 64 * 1024 * 1024  # 64MB
     
     if video_size <= MAX_SINGLE_CHUNK:
-        actual_chunk_size = video_size
+        chunk_size = video_size
         total_chunk_count = 1
     else:
-        TARGET_CHUNK_SIZE = 50 * 1000 * 1000  # 50MB
-        total_chunk_count = video_size // TARGET_CHUNK_SIZE
+        chunk_size = 50 * 1024 * 1024  # chunks de 50MB
+        total_chunk_count = video_size // chunk_size
         if total_chunk_count < 2:
+            chunk_size = video_size // 2
             total_chunk_count = 2
-            actual_chunk_size = video_size // 2
-        else:
-            actual_chunk_size = TARGET_CHUNK_SIZE
             
-    print(f"[TIKTOK] Vídeo: {video_size} bytes, Chunk: {actual_chunk_size} bytes, Total chunks: {total_chunk_count}", flush=True)
+    print(f"[TIKTOK] Iniciando postagem oficial. Vídeo: {video_size} bytes, Privacidade: {selected_privacy}", flush=True)
+    print(f"[TIKTOK] Chunks: {total_chunk_count}, tamanho de cada chunk: {chunk_size} bytes", flush=True)
     
-    init_url = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
-    
+    init_url = "https://open.tiktokapis.com/v2/post/publish/video/init/"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json; charset=UTF-8"
     }
     
     body = {
+        "post_info": {
+            "title": title,
+            "privacy_level": selected_privacy,
+            "disable_duet": False,
+            "disable_comment": False,
+            "disable_stitch": False
+        },
         "source_info": {
             "source": "FILE_UPLOAD",
             "video_size": video_size,
-            "chunk_size": actual_chunk_size,
+            "chunk_size": chunk_size,
             "total_chunk_count": total_chunk_count
         }
     }
     
-    # 1. Inicializar
+    # 4. Inicializar Postagem (com tratamento de renovação automática para 401)
     response = requests.post(init_url, headers=headers, json=body)
     
-    # Se der erro 401 ou token inválido, renova e tenta de novo
     if response.status_code == 401:
-        print("Token expirado (401). Tentando renovar...", flush=True)
+        print("[TIKTOK] Token expirado (401). Renovando e tentando novamente...", flush=True)
         refresh_tiktok_token()
         access_token = get_valid_tiktok_token()
         headers["Authorization"] = f"Bearer {access_token}"
         response = requests.post(init_url, headers=headers, json=body)
         
     if response.status_code != 200:
-        raise Exception(f"[ERRO] Inicialização do post no TikTok falhou ({response.status_code}): {response.text}")
+        raise Exception(f"[ERRO] Falha HTTP ao inicializar post no TikTok ({response.status_code}): {response.text}")
         
     res_data = response.json()
     error_info = res_data.get("error", {})
     if error_info.get("code") != "ok":
-        # Se for erro de escopo ou outro, tenta renovar antes de desistir
-        if "spam" in error_info.get("message", "").lower() or "token" in error_info.get("message", "").lower():
-            print("Tentando renovar token após erro de API...", flush=True)
+        # Tenta renovar o token se houver qualquer erro relacionado a token inválido no JSON
+        if "token" in error_info.get("message", "").lower():
+            print("[TIKTOK] Erro de token detectado no JSON. Renovando e tentando novamente...", flush=True)
             refresh_tiktok_token()
             access_token = get_valid_tiktok_token()
             headers["Authorization"] = f"Bearer {access_token}"
@@ -246,26 +181,26 @@ def upload_video_to_tiktok(video_path, title, privacy_level="Public", schedule_t
             res_data = response.json()
             error_info = res_data.get("error", {})
             if error_info.get("code") != "ok":
-                raise Exception(f"[ERRO] Erro na API do TikTok: {error_info}")
+                raise Exception(f"[ERRO] Erro na API do TikTok após renovação: {error_info}")
         else:
             raise Exception(f"[ERRO] Erro na API do TikTok: {error_info}")
             
     upload_url = res_data["data"]["upload_url"]
     publish_id = res_data["data"]["publish_id"]
     
-    # 2. Upload dos chunks
-    print(f"[TIKTOK] Fazendo upload do vídeo em {total_chunk_count} chunk(s)...", flush=True)
+    # 5. Fazer upload dos chunks usando PUT sequenciais
+    print(f"[TIKTOK] Upload iniciado. ID de Publicação: {publish_id}", flush=True)
     
     with open(video_path, "rb") as f:
         for chunk_index in range(total_chunk_count):
-            start_byte = chunk_index * actual_chunk_size
+            start_byte = chunk_index * chunk_size
             remaining = video_size - start_byte
             
-            # O último chunk leva todos os bytes restantes (que podem exceder actual_chunk_size)
+            # O último chunk leva todos os bytes restantes
             if chunk_index == total_chunk_count - 1:
                 this_chunk_size = remaining
             else:
-                this_chunk_size = actual_chunk_size
+                this_chunk_size = chunk_size
                 
             end_byte = start_byte + this_chunk_size - 1
             
@@ -289,8 +224,8 @@ def upload_video_to_tiktok(video_path, title, privacy_level="Public", schedule_t
             put_response = requests.put(upload_url, headers=put_headers, data=chunk_data)
             
             if put_response.status_code not in [200, 201, 204, 206]:
-                raise Exception(f"[ERRO] Falha no upload do chunk {chunk_index + 1} para o TikTok ({put_response.status_code}): {put_response.text}")
-        
-    print(f"[OK] Vídeo enviado com sucesso para o TikTok! ID de Publicação: {publish_id}", flush=True)
+                raise Exception(f"[ERRO] Falha no upload do chunk {chunk_index + 1} ({put_response.status_code}): {put_response.text}")
+                
+    print(f"[TIKTOK] Upload concluído com sucesso! ID de Publicação: {publish_id}", flush=True)
     return publish_id
 

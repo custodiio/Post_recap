@@ -1420,34 +1420,90 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                 
         # 4. Upload para o TikTok
         if platforms["tiktok"]:
-            print(f"[PIPELINE LOG] Iniciando upload para o TikTok...", flush=True)
-            progress_cb = make_telegram_progress_callback(status_msg, "📤 Enviando para o TikTok:")
-            await safe_edit_status("📤 Enviando para o TikTok: 0%")
-            try:
-                # Constrói a legenda do TikTok
-                tt_desc = caption_texto
-                
-                sched_time_full = post_data.get("tiktok_scheduled_time")
-
-                pub_id = await loop.run_in_executor(
-                    None,
-                    tiktok_service.upload_video_to_tiktok,
-                    video_path,
-                    tt_desc,
-                    post_data.get("tiktok_privacy", "Public"),
-                    sched_time_full,
-                    None, # Argumento de schedule_day inútil na nova lib, mas passamos None para compatibilidade de kwargs
-                    progress_cb
-                )
-                db.update_post_status(db_post_id, "tiktok", "completed", url=f"publish_id:{pub_id}")
-                priv_str = post_data.get("tiktok_privacy", "Public")
-                sched_str = f"Agendado: {sched_time_full}" if sched_time_full else "Postado Agora"
-                results_text += f"✅ <b>TikTok:</b> Enviado com sucesso ({priv_str} | {sched_str})!\n\n"
-                print(f"[PIPELINE LOG] TikTok enviado com sucesso! ID de Publicação: {pub_id}", flush=True)
-            except Exception as e:
-                db.update_post_status(db_post_id, "tiktok", "failed", error=str(e))
-                results_text += f"❌ <b>TikTok:</b> Falhou! Erro: {e}\n\n"
-                print(f"[PIPELINE LOG] TikTok falhou! Erro: {e}", flush=True)
+            sched_time_full = post_data.get("tiktok_scheduled_time")
+            if sched_time_full:
+                print(f"[PIPELINE LOG] Agendando TikTok localmente na VM para {sched_time_full}...", flush=True)
+                await safe_edit_status("📅 Agendando TikTok localmente na VM...")
+                try:
+                    import shutil
+                    # 1. Adiciona registro de agendamento local exclusivo para o TikTok
+                    new_post_id = db.add_scheduled_post(
+                        video_path="",
+                        thumbnail_youtube="",
+                        thumbnail_tiktok="",
+                        title_youtube="",
+                        title_shorts="",
+                        tiktok_caption=caption_texto,
+                        instagram_caption="",
+                        post_youtube=0,
+                        post_shorts=0,
+                        post_tiktok=1,
+                        post_instagram=0,
+                        tiktok_privacy=post_data.get("tiktok_privacy", "Public"),
+                        scheduled_time=sched_time_full,
+                        shorts_description=""
+                    )
+                    
+                    # 2. Cria a pasta permanente para este post agendado na VM
+                    base_scheduled_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scheduled_posts")
+                    os.makedirs(base_scheduled_dir, exist_ok=True)
+                    post_dir = os.path.join(base_scheduled_dir, f"post_{new_post_id}")
+                    os.makedirs(post_dir, exist_ok=True)
+                    
+                    # 3. Copia o vídeo e a capa (se existir) do diretório temporário para a pasta permanente
+                    dest_video_path = os.path.join(post_dir, "video.mp4")
+                    shutil.copy2(video_path, dest_video_path)
+                    
+                    dest_thumb_path = ""
+                    if tt_thumb and os.path.exists(tt_thumb):
+                        dest_thumb_path = os.path.join(post_dir, "thumb_tt.png")
+                        shutil.copy2(tt_thumb, dest_thumb_path)
+                        
+                    # 4. Atualiza o registro com os caminhos físicos corretos
+                    conn = db.get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                    UPDATE scheduled_posts
+                    SET video_path = ?, thumbnail_tiktok = ?, status = 'pending'
+                    WHERE id = ?
+                    """, (dest_video_path, dest_thumb_path, new_post_id))
+                    conn.commit()
+                    conn.close()
+                    
+                    # 5. Registra o status de agendado no log de posts do disparo atual
+                    db.update_post_status(db_post_id, "tiktok", "scheduled")
+                    priv_str = post_data.get("tiktok_privacy", "Public")
+                    results_text += f"📅 <b>TikTok:</b> Agendado localmente com sucesso para <code>{sched_time_full}</code> ({priv_str})!\n\n"
+                    print(f"[PIPELINE LOG] TikTok agendado localmente com sucesso! ID de agendamento: {new_post_id}", flush=True)
+                except Exception as e:
+                    db.update_post_status(db_post_id, "tiktok", "failed", error=str(e))
+                    results_text += f"❌ <b>TikTok:</b> Falha ao agendar localmente! Erro: {e}\n\n"
+                    print(f"[PIPELINE LOG] Falha ao agendar TikTok localmente: {e}", flush=True)
+            else:
+                # Postagem imediata via API Oficial do TikTok
+                print(f"[PIPELINE LOG] Iniciando upload imediato para o TikTok...", flush=True)
+                progress_cb = make_telegram_progress_callback(status_msg, "📤 Enviando para o TikTok:")
+                await safe_edit_status("📤 Enviando para o TikTok: 0%")
+                try:
+                    tt_desc = caption_texto
+                    pub_id = await loop.run_in_executor(
+                        None,
+                        tiktok_service.upload_video_to_tiktok,
+                        video_path,
+                        tt_desc,
+                        post_data.get("tiktok_privacy", "Public"),
+                        None,
+                        None,
+                        progress_cb
+                    )
+                    db.update_post_status(db_post_id, "tiktok", "completed", url=f"publish_id:{pub_id}")
+                    priv_str = post_data.get("tiktok_privacy", "Public")
+                    results_text += f"✅ <b>TikTok:</b> Enviado com sucesso ({priv_str} | Postado Agora)!\n\n"
+                    print(f"[PIPELINE LOG] TikTok enviado com sucesso! ID de Publicação: {pub_id}", flush=True)
+                except Exception as e:
+                    db.update_post_status(db_post_id, "tiktok", "failed", error=str(e))
+                    results_text += f"❌ <b>TikTok:</b> Falhou! Erro: {e}\n\n"
+                    print(f"[PIPELINE LOG] TikTok falhou! Erro: {e}", flush=True)
                 
         # 5. Upload para o Instagram (capa opcional)
         if platforms["instagram"]:
