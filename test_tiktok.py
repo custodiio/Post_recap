@@ -5,8 +5,8 @@ load_dotenv()
 
 from tiktok_service import upload_video_to_tiktok
 
-# Use um vídeo MP4 de teste (curto, <30s, formato 9:16)
-VIDEO_TEST = r"C:\Users\alecu\Downloads\pt1_renderizado2.mp4"
+# Usar o vídeo leve existente em maki_tiktok/VideosDirPath
+VIDEO_TEST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maki_tiktok", "VideosDirPath", "pre-processed.mp4")
 ACCOUNT = os.getenv("TIKTOK_ACCOUNT_NAME", "default_account")
 
 # TESTE 1: Upload privado, sem agendamento
