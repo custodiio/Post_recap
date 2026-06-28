@@ -98,6 +98,25 @@ def upload_video(session_user, video, title, schedule_time=0, allow_comment=1, a
 	print(f"Tiktok Datacenter Assigned: {dc_id}")
 	
 	print("Uploading video...")
+	
+	# Resolvendo caminho absoluto do vídeo e calculando se é vídeo longo (> 60s)
+	import os
+	if os.path.isabs(video) and os.path.exists(video):
+		resolved_video_path = video
+	else:
+		resolved_video_path = os.path.join(os.getcwd(), Config.get().videos_dir, video)
+
+	is_long_video = 0
+	try:
+		from moviepy.editor import VideoFileClip
+		with VideoFileClip(resolved_video_path) as clip:
+			duration = clip.duration
+			if duration > 60:
+				is_long_video = 1
+		print(f"[TIKTOK] Duração do clipe: {duration}s. is_long_video setado como: {is_long_video}")
+	except Exception as e:
+		print(f"[WARNING] Erro ao extrair duração do clipe com moviepy: {e}. Usando default 0.")
+
 	# Parameter validation,
 	if schedule_time and (schedule_time > 864000 or schedule_time < 900):
 		print("[-] Cannot schedule video in more than 10 days or less than 20 minutes")
@@ -300,7 +319,7 @@ def upload_video(session_user, video, title, schedule_time=0, allow_comment=1, a
 			{
 				"batch_index": 0,
 				"video_id": video_id,
-				"is_long_video": 0,
+				"is_long_video": is_long_video,
 				"single_post_feature_info": {
 					"text": title,
 					"text_extra": text_extra,
