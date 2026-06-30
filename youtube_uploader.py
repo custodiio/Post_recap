@@ -74,6 +74,24 @@ def optimize_thumbnail(thumbnail_path, max_size=2000000):
         print(f"[AVISO] Erro ao otimizar thumbnail com Pillow: {e}. Enviando arquivo original mesmo assim.", flush=True)
         return thumbnail_path
 
+def sanitize_tags(tags):
+    if not tags:
+        return []
+    sanitized = []
+    total_len = 0
+    for tag in tags:
+        clean_tag = tag.replace("<", "").replace(">", "").replace("\n", "").replace("\r", "").strip()
+        if not clean_tag:
+            continue
+        if len(clean_tag) > 100:
+            clean_tag = clean_tag[:100].strip()
+        # Limite total de 450 caracteres para segurança (limite do YT é 500)
+        if total_len + len(clean_tag) + 2 > 450:
+            break
+        sanitized.append(clean_tag)
+        total_len += len(clean_tag) + 2
+    return sanitized
+
 def upload_video_to_youtube(video_path, title, description, tags=None, category_id="24", privacy_status="private", thumbnail_path=None, progress_callback=None):
     """
     Realiza o envio de um vídeo para o YouTube e define sua capa.
@@ -85,7 +103,7 @@ def upload_video_to_youtube(video_path, title, description, tags=None, category_
         "snippet": {
             "title": title[:100],  # Limite do YouTube é 100 caracteres
             "description": description,
-            "tags": tags or [],
+            "tags": sanitize_tags(tags),
             "categoryId": category_id
         },
         "status": {
@@ -93,6 +111,7 @@ def upload_video_to_youtube(video_path, title, description, tags=None, category_
             "selfDeclaredMadeForKids": False
         }
     }
+
     
     media = MediaFileUpload(video_path, chunksize=1024*1024, resumable=True)
     request = youtube.videos().insert(

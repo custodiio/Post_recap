@@ -1,5 +1,6 @@
 import os
 import sys
+import html
 import json
 import threading
 import time
@@ -1369,7 +1370,7 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                 print(f"[PIPELINE LOG] YouTube enviado com sucesso! URL: {vid_url}", flush=True)
             except Exception as e:
                 db.update_post_status(db_post_id, "youtube", "failed", error=str(e))
-                results_text += f"❌ <b>YouTube:</b> Falhou! Erro: {e}\n\n"
+                results_text += f"❌ <b>YouTube:</b> Falhou! Erro: {html.escape(str(e))}\n\n"
                 print(f"[PIPELINE LOG] YouTube falhou! Erro: {e}", flush=True)
         
         # 3.5. Upload para o YouTube Shorts
@@ -1415,7 +1416,7 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                 print(f"[PIPELINE LOG] YouTube Shorts enviado com sucesso! URL: {vid_url}", flush=True)
             except Exception as e:
                 db.update_post_status(db_post_id, "youtube", "failed", error=str(e))
-                results_text += f"❌ <b>YouTube Shorts:</b> Falhou! Erro: {e}\n\n"
+                results_text += f"❌ <b>YouTube Shorts:</b> Falhou! Erro: {html.escape(str(e))}\n\n"
                 print(f"[PIPELINE LOG] YouTube Shorts falhou! Erro: {e}", flush=True)
                 
         # 4. Upload para o TikTok
@@ -1477,7 +1478,7 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                     print(f"[PIPELINE LOG] TikTok agendado localmente com sucesso! ID de agendamento: {new_post_id}", flush=True)
                 except Exception as e:
                     db.update_post_status(db_post_id, "tiktok", "failed", error=str(e))
-                    results_text += f"❌ <b>TikTok:</b> Falha ao agendar localmente! Erro: {e}\n\n"
+                    results_text += f"❌ <b>TikTok:</b> Falha ao agendar localmente! Erro: {html.escape(str(e))}\n\n"
                     print(f"[PIPELINE LOG] Falha ao agendar TikTok localmente: {e}", flush=True)
             else:
                 # Postagem imediata via API Oficial do TikTok
@@ -1502,7 +1503,7 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                     print(f"[PIPELINE LOG] TikTok enviado com sucesso! ID de Publicação: {pub_id}", flush=True)
                 except Exception as e:
                     db.update_post_status(db_post_id, "tiktok", "failed", error=str(e))
-                    results_text += f"❌ <b>TikTok:</b> Falhou! Erro: {e}\n\n"
+                    results_text += f"❌ <b>TikTok:</b> Falhou! Erro: {html.escape(str(e))}\n\n"
                     print(f"[PIPELINE LOG] TikTok falhou! Erro: {e}", flush=True)
                 
         # 5. Upload para o Instagram (capa opcional)
@@ -1539,7 +1540,7 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                     print(f"[PIPELINE LOG] Instagram Reels publicado com sucesso! URL: {media_url}", flush=True)
                 except Exception as e:
                     db.update_post_status(db_post_id, "instagram", "failed", error=str(e))
-                    results_text += f"❌ <b>Instagram:</b> Falhou! Erro: {e}\n\n"
+                    results_text += f"❌ <b>Instagram:</b> Falhou! Erro: {html.escape(str(e))}\n\n"
                     print(f"[PIPELINE LOG] Instagram Reels falhou! Erro: {e}", flush=True)
                     
         # Adiciona avisos de capas ausentes ao final do resultado
