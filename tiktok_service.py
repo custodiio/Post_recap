@@ -19,7 +19,16 @@ def load_and_refresh_token():
     """
     base_dir = os.path.dirname(os.path.abspath(__file__))
     token_path = os.path.join(base_dir, "token.json")
-    db_path = os.path.join(base_dir, "tiktok_approval", "database", "users.db")
+    
+    # Caminhos inteligentes do banco de dados SQLite
+    vps_db_path = os.path.abspath(os.path.join(os.path.dirname(base_dir), "database", "users.db"))
+    local_db_path = os.path.abspath(os.path.join(base_dir, "tiktok_approval", "database", "users.db"))
+    
+    db_path = None
+    if os.path.exists(vps_db_path):
+        db_path = vps_db_path
+    elif os.path.exists(local_db_path):
+        db_path = local_db_path
     
     access_token = None
     refresh_token = None
