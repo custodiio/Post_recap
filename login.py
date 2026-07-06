@@ -29,7 +29,7 @@ data = {
     "client_secret": CLIENT_SECRET,
     "code": codigo_limpo,
     "grant_type": "authorization_code",
-    "redirect_uri": "https://cinegenio.app/callback"
+    "redirect_uri": os.getenv("TIKTOK_REDIRECT_URI", "https://api.postrecap.tech/api/tiktok/callback")
 }
 
 response = requests.post(url, headers=headers, data=data)
