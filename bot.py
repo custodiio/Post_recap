@@ -472,21 +472,25 @@ async def menu_postar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         title = guia_data.get("titulo_principal", "Sem Título")
         desc = guia_data.get("tiktok_sinopse", "Sem Sinopse")
         
+        escaped_title = html.escape(title)
+        escaped_desc = html.escape(desc)
+        
         message_text = (
-            f"🎬 **Vídeo Detectado!**\n"
-            f"**Título:** {title}\n"
-            f"**Sinopse:** {desc}\n\n"
+            f"🎬 <b>Vídeo Detectado!</b>\n"
+            f"<b>Título:</b> {escaped_title}\n"
+            f"<b>Sinopse:</b> {escaped_desc}\n\n"
             f"Selecione as redes sociais para envio:"
         )
         
         reply_markup = get_platforms_keyboard(context.user_data["post_data"]["platforms"])
-        await query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode="Markdown")
+        await query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode="HTML")
         return SELECT_PLATFORMS
         
     except Exception as e:
         await query.edit_message_text(
-            f"❌ Erro ao ler informações do Drive: {e}",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Voltar", callback_data="back_to_menu")]])
+            f"❌ Erro ao ler informações do Drive: {html.escape(str(e))}",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Voltar", callback_data="back_to_menu")]]),
+            parse_mode="HTML"
         )
         return SELECT_PLATFORMS
 
@@ -929,9 +933,11 @@ async def show_final_confirmation(query, context: ContextTypes.DEFAULT_TYPE) -> 
     
     redes = []
     if platforms["youtube"]:
-        redes.append(f"• YouTube (Título: {post_data['youtube_title']})")
+        yt_title = html.escape(post_data['youtube_title'])
+        redes.append(f"• YouTube (Título: {yt_title})")
     if platforms["youtube_shorts"]:
-        redes.append(f"• YouTube Shorts (Título: {post_data['shorts_title']})")
+        shorts_title = html.escape(post_data['shorts_title'])
+        redes.append(f"• YouTube Shorts (Título: {shorts_title})")
     if platforms["tiktok"]:
         priv = post_data.get("tiktok_privacy", "Public")
         sched = post_data.get("tiktok_scheduled_time")
@@ -947,15 +953,15 @@ async def show_final_confirmation(query, context: ContextTypes.DEFAULT_TYPE) -> 
     if post_data.get("is_scheduled_run"):
         sched = post_data.get("unified_scheduled_time")
         text = (
-            "📝 **Resumo da Programação Unificada:**\n\n"
+            "<b>📝 Resumo da Programação Unificada:</b>\n\n"
             f"As mídias serão baixadas do Google Drive e armazenadas localmente para disparo em:\n"
-            f"📅 **{sched}**\n\n"
-            f"**Redes sociais ativas:**\n{redes_str}\n\n"
+            f"📅 <b>{sched}</b>\n\n"
+            f"<b>Redes sociais ativas:</b>\n{redes_str}\n\n"
             "Confirma a programação?"
         )
     else:
         text = (
-            "📝 **Resumo da Postagem:**\n\n"
+            "<b>📝 Resumo da Postagem:</b>\n\n"
             f"As mídias serão baixadas do Google Drive e enviadas para:\n"
             f"{redes_str}\n\n"
             "Confirma o envio?"
@@ -968,7 +974,7 @@ async def show_final_confirmation(query, context: ContextTypes.DEFAULT_TYPE) -> 
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
     return CONFIRM_POST
 
 async def show_final_confirmation_message(msg_object, context: ContextTypes.DEFAULT_TYPE):
@@ -978,9 +984,11 @@ async def show_final_confirmation_message(msg_object, context: ContextTypes.DEFA
     
     redes = []
     if platforms["youtube"]:
-        redes.append(f"• YouTube (Título: {post_data['youtube_title']})")
+        yt_title = html.escape(post_data['youtube_title'])
+        redes.append(f"• YouTube (Título: {yt_title})")
     if platforms["youtube_shorts"]:
-        redes.append(f"• YouTube Shorts (Título: {post_data['shorts_title']})")
+        shorts_title = html.escape(post_data['shorts_title'])
+        redes.append(f"• YouTube Shorts (Título: {shorts_title})")
     if platforms["tiktok"]:
         priv = post_data.get("tiktok_privacy", "Public")
         sched = post_data.get("tiktok_scheduled_time")
@@ -996,15 +1004,15 @@ async def show_final_confirmation_message(msg_object, context: ContextTypes.DEFA
     if post_data.get("is_scheduled_run"):
         sched = post_data.get("unified_scheduled_time")
         text = (
-            "📝 **Resumo da Programação Unificada:**\n\n"
+            "<b>📝 Resumo da Programação Unificada:</b>\n\n"
             f"As mídias serão baixadas do Google Drive e armazenadas localmente para disparo em:\n"
-            f"📅 **{sched}**\n\n"
-            f"**Redes sociais ativas:**\n{redes_str}\n\n"
+            f"📅 <b>{sched}</b>\n\n"
+            f"<b>Redes sociais ativas:</b>\n{redes_str}\n\n"
             "Confirma a programação?"
         )
     else:
         text = (
-            "📝 **Resumo da Postagem:**\n\n"
+            "<b>📝 Resumo da Postagem:</b>\n\n"
             f"As mídias serão baixadas do Google Drive e enviadas para:\n"
             f"{redes_str}\n\n"
             "Confirma o envio?"
@@ -1017,7 +1025,7 @@ async def show_final_confirmation_message(msg_object, context: ContextTypes.DEFA
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await msg_object.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    await msg_object.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
 
 async def execute_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Executa o download dos arquivos do Google Drive e posta nas redes selecionadas."""
