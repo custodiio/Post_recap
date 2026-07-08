@@ -546,9 +546,10 @@ async def confirm_platforms(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         titulo_p = guia.get("titulo_principal", "Sem Título")
         alt_titles = guia.get("titulos_alternativos", [])
         
+        escaped_titulo_p = html.escape(titulo_p)
         text = (
-            f"📌 **Opções de Título para o YouTube:**\n\n"
-            f"**Principal:** {titulo_p}\n\n"
+            f"📌 <b>Opções de Título para o YouTube:</b>\n\n"
+            f"<b>Principal:</b> {escaped_titulo_p}\n\n"
             f"Selecione qual deseja utilizar:"
         )
         
@@ -557,13 +558,14 @@ async def confirm_platforms(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         ]
         
         for idx, alt in enumerate(alt_titles):
+            # O texto do botão não é parseado como HTML/Markdown, mas limitamos o tamanho por segurança e legibilidade
             keyboard.append([InlineKeyboardButton(f"Alt {idx+1}: {alt[:30]}...", callback_data=f"yt_title_alt_{idx}")])
             
         keyboard.append([InlineKeyboardButton("✍️ Digitar Título Manualmente", callback_data="yt_title_manual")])
         keyboard.append([InlineKeyboardButton("Voltar", callback_data="menu_postar")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
         return SELECT_YOUTUBE_TITLE
     
     # Se YouTube Shorts foi selecionado (e YouTube normal não), pergunta o título do Short
@@ -689,9 +691,10 @@ async def ask_shorts_title(query, context: ContextTypes.DEFAULT_TYPE) -> int:
     titulo_p = guia.get("titulo_principal", "Sem Título")
     alt_titles = guia.get("titulos_alternativos", [])
     
+    escaped_titulo_p = html.escape(titulo_p)
     text = (
-        f"🎬 **Título para o YouTube Shorts:**\n\n"
-        f"**Sugestão:** {titulo_p} #Shorts\n\n"
+        f"🎬 <b>Título para o YouTube Shorts:</b>\n\n"
+        f"<b>Sugestão:</b> {escaped_titulo_p} #Shorts\n\n"
         f"Selecione ou digite um título:"
     )
     
@@ -706,7 +709,7 @@ async def ask_shorts_title(query, context: ContextTypes.DEFAULT_TYPE) -> int:
     keyboard.append([InlineKeyboardButton("Voltar", callback_data="menu_postar")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
     return SELECT_SHORTS_TITLE
 
 async def handle_shorts_title_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
