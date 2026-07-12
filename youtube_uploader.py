@@ -109,15 +109,16 @@ def upload_video_to_youtube(video_path, title, description, tags=None, category_
         }
     }
     
-    # Rascunho: omite o campo status para o YouTube criar como draft
-    # Qualquer outra visibilidade: inclui status normalmente
-    if privacy_status and privacy_status != "draft":
-        body["status"] = {
-            "privacyStatus": privacy_status,
-            "selfDeclaredMadeForKids": False
-        }
+    # A API v3 do YouTube não possui um status "draft" oficial. Omitir o status faz o vídeo ir como Público.
+    # Portanto, mapeamos "draft" para "private" para que o vídeo seja criado com segurança em modo privado (rascunho).
+    mapped_privacy = "private" if (not privacy_status or privacy_status == "draft") else privacy_status
     
-    upload_part = "snippet" if (not privacy_status or privacy_status == "draft") else "snippet,status"
+    body["status"] = {
+        "privacyStatus": mapped_privacy,
+        "selfDeclaredMadeForKids": False
+    }
+    
+    upload_part = "snippet,status"
     
     media = MediaFileUpload(video_path, chunksize=1024*1024, resumable=True)
     request = youtube.videos().insert(
