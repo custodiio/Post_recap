@@ -92,9 +92,10 @@ def sanitize_tags(tags):
         total_len += len(clean_tag) + 2
     return sanitized
 
-def upload_video_to_youtube(video_path, title, description, tags=None, category_id="24", privacy_status="private", thumbnail_path=None, progress_callback=None):
+def upload_video_to_youtube(video_path, title, description, tags=None, category_id="24", privacy_status="draft", thumbnail_path=None, progress_callback=None):
     """
     Realiza o envio de um vídeo para o YouTube e define sua capa.
+    privacy_status: 'draft' (rascunho, padrão) | 'private' | 'public' | 'unlisted'
     Retorna o ID do vídeo e a URL de visualização.
     """
     youtube = get_youtube_service()
@@ -105,17 +106,22 @@ def upload_video_to_youtube(video_path, title, description, tags=None, category_
             "description": description,
             "tags": sanitize_tags(tags),
             "categoryId": category_id
-        },
-        "status": {
-            "privacyStatus": privacy_status,  # 'private' ou 'unlisted'
-            "selfDeclaredMadeForKids": False
         }
     }
-
+    
+    # Rascunho: omite o campo status para o YouTube criar como draft
+    # Qualquer outra visibilidade: inclui status normalmente
+    if privacy_status and privacy_status != "draft":
+        body["status"] = {
+            "privacyStatus": privacy_status,
+            "selfDeclaredMadeForKids": False
+        }
+    
+    upload_part = "snippet" if (not privacy_status or privacy_status == "draft") else "snippet,status"
     
     media = MediaFileUpload(video_path, chunksize=1024*1024, resumable=True)
     request = youtube.videos().insert(
-        part="snippet,status",
+        part=upload_part,
         body=body,
         media_body=media
     )

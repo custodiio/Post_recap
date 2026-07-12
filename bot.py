@@ -36,7 +36,7 @@ import instagram_uploader
 load_dotenv()
 
 # Estados da conversação
-SELECT_PLATFORMS, SELECT_YOUTUBE_TITLE, INPUT_YOUTUBE_TITLE_MANUAL, SELECT_SHORTS_TITLE, INPUT_SHORTS_TITLE_MANUAL, SELECT_INSTAGRAM_SCHEDULING, INPUT_INSTAGRAM_TIME, SELECT_TIKTOK_PRIVACY, SELECT_TIKTOK_SCHEDULING, INPUT_TIKTOK_TIME, CONFIRM_POST, INPUT_UNIFIED_SCHEDULE_TIME = range(12)
+SELECT_PLATFORMS, SELECT_YOUTUBE_TITLE, INPUT_YOUTUBE_TITLE_MANUAL, SELECT_SHORTS_TITLE, INPUT_SHORTS_TITLE_MANUAL, SELECT_YOUTUBE_PRIVACY, SELECT_INSTAGRAM_SCHEDULING, INPUT_INSTAGRAM_TIME, SELECT_TIKTOK_PRIVACY, SELECT_TIKTOK_SCHEDULING, INPUT_TIKTOK_TIME, CONFIRM_POST, INPUT_UNIFIED_SCHEDULE_TIME = range(13)
 
 # Lista de usuários aprovados (suporta IDs e Usernames)
 APPROVED_USERS = [u.strip() for u in (os.getenv("AUTHORIZED_TELEGRAM_USERS", "") + "," + os.getenv("APPROVED_USERS", "")).split(",") if u.strip()]
@@ -107,7 +107,7 @@ def process_scheduled_posts(bot):
                     description=title_yt,
                     tags=tags_yt,
                     category_id="24",
-                    privacy_status="private",
+                    privacy_status="draft",
                     thumbnail_path=thumb_yt if thumb_yt and os.path.exists(thumb_yt) else None,
                     progress_callback=None
                 )
@@ -135,7 +135,7 @@ def process_scheduled_posts(bot):
                     description=desc_shorts_final,
                     tags=tags_yt,
                     category_id="24",
-                    privacy_status="private",
+                    privacy_status="draft",
                     thumbnail_path=thumb_yt if thumb_yt and os.path.exists(thumb_yt) else None,
                     progress_callback=None
                 )
@@ -650,7 +650,7 @@ async def handle_youtube_title_selection(update: Update, context: ContextTypes.D
     if context.user_data["post_data"]["platforms"]["youtube_shorts"]:
         return await ask_shorts_title(query, context)
     else:
-        return await route_after_titles(update, context)
+        return await ask_youtube_privacy(query, context)
    
 async def handle_youtube_title_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recebe o título do YouTube digitado manualmente pelo usuário."""
@@ -683,7 +683,7 @@ async def handle_youtube_title_manual(update: Update, context: ContextTypes.DEFA
         )
         return SELECT_SHORTS_TITLE
     else:
-        return await route_after_titles(update, context)
+        return await ask_youtube_privacy(update, context)
 
 async def ask_shorts_title(query, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Pergunta o título para o YouTube Shorts."""
@@ -737,7 +737,7 @@ async def handle_shorts_title_selection(update: Update, context: ContextTypes.DE
         return INPUT_SHORTS_TITLE_MANUAL
     
     # Próximo passo
-    return await route_after_titles(update, context)
+    return await ask_youtube_privacy(query, context)
 
 async def handle_shorts_title_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recebe o título do Shorts digitado manualmente."""
@@ -753,6 +753,51 @@ async def handle_shorts_title_manual(update: Update, context: ContextTypes.DEFAU
     if "#shorts" not in title.lower():
         title = f"{title} #Shorts"
     context.user_data["post_data"]["shorts_title"] = title
+    
+    return await ask_youtube_privacy(update, context)
+
+async def ask_youtube_privacy(query_or_update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Pergunta a visibilidade do vídeo no YouTube."""
+    # Suporta ser chamado com query ou com update completo
+    query = getattr(query_or_update, 'callback_query', None) or query_or_update
+    message = getattr(query_or_update, 'message', None)
+    
+    text = (
+        "🔒 <b>Visibilidade no YouTube</b>\n"
+        "Como deseja publicar o vídeo?"
+    )
+    keyboard = [
+        [
+            InlineKeyboardButton("📝 Rascunho", callback_data="yt_priv_draft"),
+            InlineKeyboardButton("🌎 Público", callback_data="yt_priv_public")
+        ],
+        [
+            InlineKeyboardButton("🔒 Privado", callback_data="yt_priv_private"),
+            InlineKeyboardButton("🔗 Não Listado", callback_data="yt_priv_unlisted")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if hasattr(query, 'edit_message_text'):
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
+    elif message:
+        await message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
+    
+    return SELECT_YOUTUBE_PRIVACY
+
+async def handle_youtube_privacy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Processa a escolha de visibilidade do YouTube."""
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    privacy_map = {
+        "yt_priv_draft": "draft",
+        "yt_priv_public": "public",
+        "yt_priv_private": "private",
+        "yt_priv_unlisted": "unlisted"
+    }
+    context.user_data["post_data"]["youtube_privacy"] = privacy_map.get(data, "draft")
     
     return await route_after_titles(update, context)
 
@@ -1372,7 +1417,7 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                     desc_yt,
                     tags_yt,
                     "24", # Categoria Entretenimento
-                    "private", # Posta como privado/rascunho
+                    post_data.get("youtube_privacy", "draft"),  # Visibilidade escolhida pelo usuário
                     yt_thumb,
                     progress_cb
                 )
@@ -1418,7 +1463,7 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
                     desc_yt,
                     tags_yt,
                     "24",
-                    "private",
+                    post_data.get("youtube_privacy", "draft"),  # Visibilidade escolhida pelo usuário
                     yt_thumb,
                     progress_cb
                 )
@@ -1645,6 +1690,9 @@ def main():
             ],
             INPUT_SHORTS_TITLE_MANUAL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_shorts_title_manual)
+            ],
+            SELECT_YOUTUBE_PRIVACY: [
+                CallbackQueryHandler(handle_youtube_privacy, pattern="^yt_priv_")
             ],
             SELECT_INSTAGRAM_SCHEDULING: [
                 CallbackQueryHandler(handle_instagram_scheduling, pattern="^ig_")
