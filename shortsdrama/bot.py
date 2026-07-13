@@ -153,17 +153,23 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.application.create_task(_process_pending_part(query.message.chat_id, part_id, context))
         await query.edit_message_text("🚀 Iniciando fatiamento e upload da parte selecionada...")
         
-    elif data.startswith("set_priv_"):
-        # Processo de postagem manual - define privacidade
+    elif data.startswith("set_dest_"):
+        # Processo de postagem manual - define plataforma e privacidade
         parts = data.split("_")
         chat_id = parts[2]
         msg_id = int(parts[3])
-        priv_choice = parts[4] # public, private
+        platform_choice = parts[4] # yt, tt, both
+        priv_choice = parts[5] # public, private
         
         context.application.create_task(
-            _process_manual_post(update.effective_chat.id, chat_id, msg_id, priv_choice, context)
+            _process_manual_post(update.effective_chat.id, chat_id, msg_id, platform_choice, priv_choice, context)
         )
-        await query.edit_message_text(f"⏳ Processando vídeo com privacidade: *{priv_choice.upper()}*...", parse_mode=ParseMode.MARKDOWN)
+        dest_label = {
+            "yt": "YouTube",
+            "tt": "TikTok",
+            "both": "YouTube + TikTok"
+        }.get(platform_choice, "Desconhecido")
+        await query.edit_message_text(f"⏳ Processando vídeo no *{dest_label}* com privacidade: *{priv_choice.upper()}*...", parse_mode=ParseMode.MARKDOWN)
 
 @admin_only
 async def link_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -177,16 +183,24 @@ async def link_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = f"-100{tg_match.group(1)}"
         msg_id = int(tg_match.group(2))
         
-        # Pergunta a privacidade antes de fazer o upload
+        # Pergunta o destino e a privacidade antes de fazer o upload
         keyboard = [
             [
-                InlineKeyboardButton("🔒 Privado (Private)", callback_data=f"set_priv_{chat_id}_{msg_id}_private"),
-                InlineKeyboardButton("🌐 Público (Public)", callback_data=f"set_priv_{chat_id}_{msg_id}_public")
+                InlineKeyboardButton("📺 YouTube (Público)", callback_data=f"set_dest_{chat_id}_{msg_id}_yt_public"),
+                InlineKeyboardButton("📺 YouTube (Privado)", callback_data=f"set_dest_{chat_id}_{msg_id}_yt_private")
+            ],
+            [
+                InlineKeyboardButton("🎵 TikTok (Público)", callback_data=f"set_dest_{chat_id}_{msg_id}_tt_public"),
+                InlineKeyboardButton("🎵 TikTok (Privado)", callback_data=f"set_dest_{chat_id}_{msg_id}_tt_private")
+            ],
+            [
+                InlineKeyboardButton("🔄 Ambos (Público)", callback_data=f"set_dest_{chat_id}_{msg_id}_both_public"),
+                InlineKeyboardButton("🔄 Ambos (Privado)", callback_data=f"set_dest_{chat_id}_{msg_id}_both_private")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
-            "Selecione a privacidade de destino para esta postagem:",
+            "Selecione o destino e a privacidade para esta postagem:",
             reply_markup=reply_markup
         )
         return
@@ -198,8 +212,8 @@ async def link_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await update.message.reply_text("❌ Link não reconhecido. Envie um link válido de vídeo de canal privado do Telegram ou Douyin.")
 
-async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, privacy: str, context: ContextTypes.DEFAULT_TYPE):
-    """Pipeline que baixa, corta a Parte 1 de 6-8 minutos e posta no TikTok e YouTube."""
+async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, platform: str, privacy: str, context: ContextTypes.DEFAULT_TYPE):
+    """Pipeline que baixa, corta a Parte 1 de 6-8 minutos e posta nas redes selecionadas."""
     status_msg = await context.bot.send_message(chat_id, "⏳ Inicializando cliente Telegram MTProto...")
     
     tmp_orig = os.path.join(current_dir, "temp", f"orig_{msg_id}.mp4")
@@ -281,31 +295,37 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, priv
         meta = templates.format_post_meta(title, 1)
         
         # Fase 4: Postagem no YouTube (Vídeo Completo com Capa)
-        await status_msg.edit_text("📤 Enviando Vídeo Completo para o YouTube...")
-        yt_ok, yt_id = await uploader.upload_to_youtube(
-            video_path=tmp_orig,
-            title=meta["youtube_title"],
-            description=meta["youtube_desc"],
-            tags=meta["tags"],
-            privacy_status=privacy,
-            thumbnail_path=tmp_final_cover if cover_ready else None
-        )
+        yt_ok, yt_id = False, "Pulado"
+        if platform in ["yt", "both"]:
+            await status_msg.edit_text("📤 Enviando Vídeo Completo para o YouTube...")
+            yt_ok, yt_id = await uploader.upload_to_youtube(
+                video_path=tmp_orig,
+                title=meta["youtube_title"],
+                description=meta["youtube_desc"],
+                tags=meta["tags"],
+                privacy_status=privacy,
+                thumbnail_path=tmp_final_cover if cover_ready else None
+            )
         
         # Fase 5: Postagem no TikTok (Parte 1 Fatiada)
-        await status_msg.edit_text("📤 Enviando Parte 1 para o TikTok...")
-        tt_ok, tt_id = await uploader.upload_to_tiktok(
-            video_path=tmp_cut,
-            title=meta["tiktok_desc"],
-            privacy_level="PUBLIC" if privacy == "public" else "SELF_ONLY"
-        )
+        tt_ok, tt_id = False, "Pulado"
+        if platform in ["tt", "both"]:
+            await status_msg.edit_text("📤 Enviando Parte 1 para o TikTok...")
+            tt_ok, tt_id = await uploader.upload_to_tiktok(
+                video_path=tmp_cut,
+                title=meta["tiktok_desc"],
+                privacy_level="PUBLIC" if privacy == "public" else "SELF_ONLY"
+            )
         
         # Finalização e Limpeza
         result_text = f"✅ *PROCESSO CONCLUÍDO!*\n\n🎬 *Drama:* {title}\n🍿 *Total de Partes Enfileiradas (TikTok):* {len(parts_plan)}\n\n"
-        if yt_ok: result_text += f"📺 YouTube (Completo): Enviado (ID: `{yt_id}`)\n"
-        else: result_text += f"❌ YouTube Falhou: {yt_id}\n"
+        if platform in ["yt", "both"]:
+            if yt_ok: result_text += f"📺 YouTube (Completo): Enviado (ID: `{yt_id}`)\n"
+            else: result_text += f"❌ YouTube Falhou: {yt_id}\n"
         
-        if tt_ok: result_text += f"🎵 TikTok (Parte 1): Enviado (ID: `{tt_id}`)\n"
-        else: result_text += f"❌ TikTok Falhou: {tt_id}\n"
+        if platform in ["tt", "both"]:
+            if tt_ok: result_text += f"🎵 TikTok (Parte 1): Enviado (ID: `{tt_id}`)\n"
+            else: result_text += f"❌ TikTok Falhou: {tt_id}\n"
         
         await status_msg.edit_text(result_text, parse_mode=ParseMode.MARKDOWN)
         
