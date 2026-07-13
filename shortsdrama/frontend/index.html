@@ -19,15 +19,15 @@
             </div>
             <div class="auth-telegram-info">
                 <p style="margin-bottom: 20px; font-size: 0.95rem; line-height: 1.6; color: var(--text-muted);">
-                    Para entrar no painel, acesse o bot do Telegram da aplicação e solicite o link de acesso seguro:
+                    Para entrar no painel, acesse o bot do Telegram e solicite o link de acesso:
                 </p>
                 <div style="background: var(--bg-dark); border: 1px solid var(--border-color); padding: 16px; border-radius: 12px; margin-bottom: 20px; text-align: center;">
                     <span style="font-weight: 800; font-size: 1.1rem; color: var(--primary-color);">@shortsdramas_bot</span>
                     <br>
-                    <span style="font-size: 0.8rem; color: var(--text-muted);">Comando: /login ou botão no painel</span>
+                    <span style="font-size: 0.8rem; color: var(--text-muted);">Comando: /login</span>
                 </div>
                 <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
-                    ⚠️ O link de acesso gerado expira em 10 minutos por motivos de segurança.
+                    ⚠️ O link de acesso gerado expira em 10 minutos.
                 </p>
             </div>
         </div>
@@ -35,7 +35,7 @@
 
     <!-- MAIN INTERFACE (DASHBOARD) -->
     <div id="app-container" class="dashboard-wrapper hidden">
-        
+
         <!-- HEADER -->
         <header class="main-header">
             <div class="header-logo">
@@ -43,15 +43,15 @@
                 <h1>ShortsDrama <span>Studio</span></h1>
             </div>
             <div class="user-profile">
-                <span id="user-email">email@admin.com</span>
+                <span id="user-email">Administrador</span>
                 <button onclick="handleLogout()" class="btn-logout">Sair</button>
             </div>
         </header>
 
         <!-- DASHBOARD GRID -->
         <main class="dashboard-grid">
-            
-            <!-- LEFT COLUMN: SETTINGS & QUICK CONTROLS -->
+
+            <!-- LEFT: CONTROLS -->
             <section class="control-panel">
                 <div class="panel-card">
                     <h3>⚡ Robôs Automatizados</h3>
@@ -111,86 +111,133 @@
                 </div>
             </section>
 
-            <!-- RIGHT COLUMN: DRAMAS LIST & PROGRESS OR TEMPLATES -->
-            <section class="main-content-section" style="display: flex; flex-direction: column; gap: 20px;">
-                <!-- Abas de Navegação -->
-                <div class="tabs-navigation" style="display: flex; gap: 15px; margin-bottom: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
-                    <button onclick="switchTab('dramas')" id="tab-dramas" class="tab-btn active-tab" style="background: none; border: none; color: var(--primary-color); font-family: var(--font-stack); font-size: 1.2rem; font-weight: 800; cursor: pointer; padding: 5px 10px; border-bottom: 3px solid var(--primary-color); transition: all 0.2s;">🎬 Fila de Dramas</button>
-                    <button onclick="switchTab('templates')" id="tab-templates" class="tab-btn" style="background: none; border: none; color: var(--text-muted); font-family: var(--font-stack); font-size: 1.2rem; font-weight: 800; cursor: pointer; padding: 5px 10px; transition: all 0.2s;">📝 Modelos de Postagem</button>
+            <!-- RIGHT: DRAMAS + TEMPLATES -->
+            <section class="main-content-section" style="display:flex;flex-direction:column;gap:20px;">
+                <!-- Tabs -->
+                <div class="tabs-navigation">
+                    <button onclick="switchTab('dramas')" id="tab-dramas" class="tab-btn active-tab">🎬 Títulos Cadastrados</button>
+                    <button onclick="switchTab('templates')" id="tab-templates" class="tab-btn">📝 Modelos de Postagem</button>
                 </div>
 
-                <!-- Aba de Fila de Dramas -->
+                <!-- Aba Dramas -->
                 <div id="tab-content-dramas" class="tab-content">
-                    <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h2>🎬 Fila e Histórico de Dramas</h2>
-                        <button onclick="loadDramas()" class="btn-secondary">🔄 Atualizar Fila</button>
+                    <div class="section-header" style="margin-bottom:20px;">
+                        <h2>🎬 Títulos Cadastrados</h2>
+                        <button onclick="loadDramas()" class="btn-secondary">🔄 Atualizar</button>
                     </div>
-                    <div id="dramas-container" class="dramas-list">
-                        <div class="loading-state">Carregando lista de doramas...</div>
+                    <div id="dramas-container" class="dramas-grid">
+                        <div class="loading-state">Carregando títulos...</div>
                     </div>
                 </div>
 
-                <!-- Aba de Modelos/Templates -->
+                <!-- Aba Templates -->
                 <div id="tab-content-templates" class="tab-content hidden">
-                    <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h2>📝 Modelos de Postagem (Templates)</h2>
-                        <button onclick="showNewTemplateForm()" class="btn-primary" style="width: auto; padding: 10px 20px;">➕ Novo Modelo</button>
+                    <div class="section-header" style="margin-bottom:20px;">
+                        <h2>📝 Modelos de Postagem</h2>
+                        <button onclick="showNewTemplateForm()" class="btn-primary" style="width:auto;padding:10px 20px;">➕ Novo Modelo</button>
                     </div>
-                    
-                    <!-- Formulário de Criação/Edição de Template (Oculto por padrão) -->
-                    <div id="template-form-card" class="panel-card hidden" style="margin-bottom: 30px; text-align: left;">
+                    <div id="template-form-card" class="panel-card hidden" style="margin-bottom:30px;text-align:left;">
                         <h3 id="template-form-title">➕ Criar Novo Modelo</h3>
                         <input type="hidden" id="template-id-field">
-                        
                         <div class="form-group">
-                            <label for="template-name">Nome do Modelo (ex: Drama Romântico)</label>
+                            <label for="template-name">Nome do Modelo</label>
                             <input type="text" id="template-name" required>
                         </div>
                         <div class="form-group">
-                            <label for="template-yt-title">Título YouTube (Use {title} para substituição dinâmica)</label>
+                            <label for="template-yt-title">Título YouTube (use {title})</label>
                             <input type="text" id="template-yt-title" placeholder="{title} - Completo" required>
                         </div>
                         <div class="form-group">
-                            <label for="template-yt-desc">Descrição YouTube (Use {title} e {part_str} para substituição dinâmica)</label>
-                            <textarea id="template-yt-desc" rows="5" style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); color: var(--text-color); padding: 12px; border-radius: 10px; font-family: var(--font-stack);" required></textarea>
+                            <label for="template-yt-desc">Descrição YouTube (use {title} e {part_str})</label>
+                            <textarea id="template-yt-desc" rows="5" style="width:100%;background:var(--bg-dark);border:1px solid var(--border-color);color:var(--text-color);padding:12px;border-radius:10px;font-family:var(--font-stack);" required></textarea>
                         </div>
                         <div class="form-group">
-                            <label for="template-tt-desc">Descrição TikTok (Use {title} e {part_str} para substituição dinâmica)</label>
-                            <textarea id="template-tt-desc" rows="4" style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); color: var(--text-color); padding: 12px; border-radius: 10px; font-family: var(--font-stack);" required></textarea>
+                            <label for="template-tt-desc">Legenda TikTok (use {title} e {part_str})</label>
+                            <textarea id="template-tt-desc" rows="4" style="width:100%;background:var(--bg-dark);border:1px solid var(--border-color);color:var(--text-color);padding:12px;border-radius:10px;font-family:var(--font-stack);" required></textarea>
                         </div>
                         <div class="form-group">
                             <label for="template-tags">Tags (separadas por vírgula)</label>
                             <input type="text" id="template-tags" placeholder="dramas, cdrama, kdrama">
                         </div>
-                        <div style="display: flex; gap: 15px; margin-top: 25px;">
-                            <button onclick="saveTemplate()" class="btn-primary" style="flex: 1;">Salvar Modelo</button>
-                            <button onclick="hideTemplateForm()" class="btn-secondary" style="flex: 1;">Cancelar</button>
+                        <div style="display:flex;gap:15px;margin-top:25px;">
+                            <button onclick="saveTemplate()" class="btn-primary" style="flex:1;">Salvar Modelo</button>
+                            <button onclick="hideTemplateForm()" class="btn-secondary" style="flex:1;">Cancelar</button>
                         </div>
                     </div>
-
-                    <div id="templates-list-container" class="dramas-list">
-                        <!-- Modelos de templates injetados via JS -->
-                    </div>
+                    <div id="templates-list-container" class="dramas-list"></div>
                 </div>
             </section>
-
         </main>
     </div>
 
+    <!-- MODAL DE PARTES -->
+    <div id="parts-modal" class="modal-overlay hidden" onclick="closeModalOutside(event)">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div>
+                    <h2 id="modal-drama-title">Título do Drama</h2>
+                    <span id="modal-drama-meta" class="drama-meta"></span>
+                </div>
+                <button onclick="closeModal()" class="modal-close-btn">✕</button>
+            </div>
+
+            <!-- Lista de Partes -->
+            <div id="modal-parts-list" class="modal-parts-list"></div>
+
+            <!-- Postar nova parte -->
+            <div class="modal-post-section">
+                <h4 class="modal-section-title">📤 Postar Próxima Parte</h4>
+                <div class="modal-post-controls">
+                    <div class="modal-control-group">
+                        <label>Plataforma</label>
+                        <div class="platform-selector">
+                            <button onclick="selectPlatform('tt')" id="plat-tt" class="platform-btn active-platform">
+                                🎵 TikTok
+                            </button>
+                            <button onclick="selectPlatform('yt')" id="plat-yt" class="platform-btn">
+                                📺 YouTube
+                            </button>
+                            <button onclick="selectPlatform('both')" id="plat-both" class="platform-btn">
+                                🔄 Ambos
+                            </button>
+                        </div>
+                    </div>
+                    <div class="modal-control-group">
+                        <label>Privacidade</label>
+                        <div class="privacy-selector">
+                            <button onclick="selectPrivacy('private')" id="priv-private" class="privacy-btn active-privacy">
+                                🔒 Privado
+                            </button>
+                            <button onclick="selectPrivacy('public')" id="priv-public" class="privacy-btn">
+                                🌐 Público
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div id="modal-post-target" class="modal-post-target-info">
+                    Nenhuma parte selecionada para postagem.
+                </div>
+                <button id="modal-post-btn" onclick="postSelectedPart()" class="btn-post-modal" disabled>
+                    🚀 Postar Parte Selecionada
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
-        const API_URL = "/dramas"; // Prefixo dinâmico do backend de dramas
-        // Inicialização automática - testa se há sessão ativa via cookie
+        const API_URL = "/dramas";
+        let currentDramas = [];
+        let selectedDramaId = null;
+        let selectedPartId = null;
+        let selectedPlatform = "tt";
+        let selectedPrivacy = "private";
+
+        // Auto-detect sessão
         document.addEventListener("DOMContentLoaded", async () => {
             try {
                 const res = await fetch(API_URL + "/api/settings");
-                if (res.ok) {
-                    showDashboard();
-                } else {
-                    showLogin();
-                }
-            } catch (err) {
-                showLogin();
-            }
+                if (res.ok) { showDashboard(); } else { showLogin(); }
+            } catch { showLogin(); }
         });
 
         function showLogin() {
@@ -201,46 +248,33 @@
         function showDashboard() {
             document.getElementById("login-container").classList.add("hidden");
             document.getElementById("app-container").classList.remove("hidden");
-            
-            // Define o nome de usuário/admin padrão no menu
-            document.getElementById("user-email").textContent = "Administrador";
-            
             loadSettings();
             loadDramas();
         }
 
         async function handleLogout() {
-            try {
-                await fetch(API_URL + "/api/auth/logout", {
-                    method: "POST"
-                });
-            } catch (e) {}
+            try { await fetch(API_URL + "/api/auth/logout", { method: "POST" }); } catch {}
             showLogin();
         }
 
         async function fetchAPI(endpoint, options = {}) {
             const res = await fetch(API_URL + endpoint, options);
-            if (res.status === 401) {
-                showLogin();
-                throw new Error("Sessão expirada");
-            }
+            if (res.status === 401) { showLogin(); throw new Error("Sessão expirada"); }
             return res;
         }
 
+        // --- SETTINGS ---
         async function loadSettings() {
             try {
                 const res = await fetchAPI("/api/settings");
                 const data = await res.json();
-                
                 document.getElementById("toggle-tiktok").checked = data.tiktok_auto_post === "1";
                 document.getElementById("toggle-youtube").checked = data.youtube_auto_post === "1";
                 document.getElementById("posts-per-day").value = data.posts_per_day;
                 document.getElementById("scheduled-hours").value = data.scheduled_hours;
                 document.getElementById("yt-privacy").value = data.youtube_default_privacy;
                 document.getElementById("tt-privacy").value = data.tiktok_default_privacy || "SELF_ONLY";
-            } catch (e) {
-                console.error("Erro carregando configurações:", e);
-            }
+            } catch (e) { console.error("Erro carregando configurações:", e); }
         }
 
         async function saveSettings() {
@@ -248,7 +282,6 @@
             const successDiv = document.getElementById("settings-success");
             btn.disabled = true;
             successDiv.classList.add("hidden");
-
             const body = {
                 tiktok_auto_post: document.getElementById("toggle-tiktok").checked ? "1" : "0",
                 youtube_auto_post: document.getElementById("toggle-youtube").checked ? "1" : "0",
@@ -257,217 +290,304 @@
                 youtube_default_privacy: document.getElementById("yt-privacy").value,
                 tiktok_default_privacy: document.getElementById("tt-privacy").value
             };
-
             try {
                 const res = await fetchAPI("/api/settings", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(body)
+                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
                 });
-                
                 if (res.ok) {
                     successDiv.classList.remove("hidden");
                     setTimeout(() => successDiv.classList.add("hidden"), 3000);
                 }
-            } catch (e) {
-                alert("Erro ao salvar configurações.");
-            } finally {
-                btn.disabled = false;
-            }
+            } catch { alert("Erro ao salvar configurações."); }
+            finally { btn.disabled = false; }
         }
 
-        async function saveConfigFromUI() {
-            // Salva de forma automática ao clicar nos switches
-            await saveSettings();
-        }
+        async function saveConfigFromUI() { await saveSettings(); }
 
+        // --- DRAMAS GRID ---
         async function loadDramas() {
             const container = document.getElementById("dramas-container");
-            container.innerHTML = '<div class="loading-state">Carregando lista de doramas...</div>';
-
+            container.innerHTML = '<div class="loading-state">Carregando títulos...</div>';
             try {
                 const res = await fetchAPI("/api/dramas");
                 const dramas = await res.json();
-                
+                currentDramas = dramas;
+
                 if (!dramas.length) {
-                    container.innerHTML = '<div class="empty-state">Nenhum drama cadastrado no banco de dados.</div>';
+                    container.innerHTML = '<div class="empty-state">Nenhum drama cadastrado ainda.</div>';
                     return;
                 }
 
                 container.innerHTML = dramas.map(d => {
-                    const createdDate = new Date(d.created_at).toLocaleString('pt-BR');
-                    
-                    // Constrói HTML das partes
-                    const partsHtml = d.parts.map(p => {
-                        let statusClass = "status-pending";
-                        let statusText = "Pendente";
-                        let actionsHtml = "";
+                    const createdDate = new Date(d.created_at).toLocaleDateString('pt-BR');
+                    const parts = d.parts || [];
+                    const totalParts = parts.length;
 
-                        if (p.status === "posted") {
-                            statusClass = "status-posted";
-                            statusText = "Publicado";
-                        } else if (p.status === "processing") {
-                            statusClass = "status-processing";
-                            statusText = "Fatiando/Enviando...";
-                        } else if (p.status === "failed") {
-                            statusClass = "status-failed";
-                            statusText = "Falhou";
-                            actionsHtml = `<button onclick="postPart(${p.id}, this)" class="btn-retry-part">Tentar Novamente</button>`;
-                        } else {
-                            // Pendente - pode disparar
-                            actionsHtml = `<button onclick="postPart(${p.id}, this)" class="btn-post-part">Postar Parte {X}</button>`.replace("{X}", p.part_number);
-                        }
+                    // Determina status geral do drama
+                    const lastPosted = parts.filter(p => p.status === 'posted').length;
+                    const hasPending = parts.some(p => p.status === 'pending');
+                    const hasFailed = parts.some(p => p.status === 'failed');
+                    const hasProcessing = parts.some(p => p.status === 'processing');
 
-                        const startMin = Math.floor(p.start_time / 60);
-                        const startSeg = Math.floor(p.start_time % 60);
-                        const endMin = Math.floor(p.end_time / 60);
-                        const endSeg = Math.floor(p.end_time % 60);
+                    let statusBadge = '';
+                    let cardGlow = '';
+                    if (hasProcessing) {
+                        statusBadge = '<span class="badge status-processing">⚙️ Processando...</span>';
+                        cardGlow = 'card-glow-processing';
+                    } else if (hasFailed) {
+                        statusBadge = '<span class="badge status-failed">❌ Falhou</span>';
+                        cardGlow = 'card-glow-failed';
+                    } else if (lastPosted > 0) {
+                        statusBadge = `<span class="badge status-posted">✅ Parte ${lastPosted} Postada</span>`;
+                        cardGlow = 'card-glow-posted';
+                    } else if (hasPending) {
+                        statusBadge = '<span class="badge status-pending">🕐 Pendente</span>';
+                    }
 
-                        return `
-                            <div class="part-row">
-                                <span class="part-name">Fatia ${p.part_number} (${startMin}:${startSeg.toString().padStart(2, '0')} - ${endMin}:${endSeg.toString().padStart(2, '0')})</span>
-                                <div class="part-status-actions">
-                                    <span class="badge ${statusClass}">${statusText}</span>
-                                    ${actionsHtml}
-                                </div>
-                            </div>
-                        `;
-                    }).join("");
+                    const sizeMb = d.file_size ? `${(d.file_size / (1024*1024)).toFixed(0)} MB` : '—';
 
                     return `
-                        <div class="drama-card">
-                            <div class="drama-card-header">
-                                <div class="drama-info">
-                                    <h3>🎬 ${d.title}</h3>
-                                    <span class="drama-meta">Cadastrado em: ${createdDate} | Tamanho: ${(d.file_size / (1024*1024)).toFixed(1)} MB</span>
-                                </div>
-                                <button onclick="deleteDrama(${d.id})" class="btn-delete-drama">Excluir Drama</button>
+                        <div class="drama-grid-card ${cardGlow}" onclick="openDramaModal(${d.id})" title="Clique para gerenciar partes">
+                            <div class="drama-card-thumb">
+                                <div class="drama-thumb-placeholder">🎬</div>
+                                ${statusBadge}
                             </div>
-                            <div class="drama-parts-box">
-                                ${partsHtml}
+                            <div class="drama-card-body">
+                                <h3 class="drama-card-title">${d.title}</h3>
+                                <div class="drama-card-meta">
+                                    <span>📅 ${createdDate}</span>
+                                    <span>💾 ${sizeMb}</span>
+                                    <span>🎞️ ${totalParts} parte${totalParts !== 1 ? 's' : ''}</span>
+                                </div>
+                            </div>
+                            <div class="drama-card-footer">
+                                <span class="drama-card-cta">👆 Clique para gerenciar</span>
+                                <button onclick="event.stopPropagation();deleteDrama(${d.id})" class="btn-delete-mini">🗑️</button>
                             </div>
                         </div>
                     `;
                 }).join("");
-
-            } catch (err) {
+            } catch {
                 container.innerHTML = '<div class="error-state">Falha ao buscar dados do servidor.</div>';
             }
         }
 
-        async function postPart(partId, buttonElement) {
-            if (!confirm("Confirmar fatiamento inteligente de 6-8min com recap de 30s e postagem imediata?")) return;
-            buttonElement.disabled = true;
-            buttonElement.textContent = "Enviando...";
-            
+        async function deleteDrama(dramaId) {
+            if (!confirm("Remover este drama do histórico?")) return;
             try {
-                const res = await fetchAPI(`/api/parts/${partId}/post`, {
-                    method: "POST"
+                const res = await fetchAPI(`/api/dramas/${dramaId}`, { method: "DELETE" });
+                if (res.ok) loadDramas();
+            } catch { alert("Erro ao excluir drama."); }
+        }
+
+        // --- MODAL DE PARTES ---
+        function openDramaModal(dramaId) {
+            const drama = currentDramas.find(d => d.id === dramaId);
+            if (!drama) return;
+            selectedDramaId = dramaId;
+            selectedPartId = null;
+
+            document.getElementById("modal-drama-title").textContent = drama.title;
+            const createdDate = new Date(drama.created_at).toLocaleString('pt-BR');
+            document.getElementById("modal-drama-meta").textContent = `Cadastrado em: ${createdDate}`;
+
+            renderModalParts(drama.parts || []);
+            updateModalPostInfo();
+
+            document.getElementById("parts-modal").classList.remove("hidden");
+            document.body.style.overflow = "hidden";
+        }
+
+        function renderModalParts(parts) {
+            const container = document.getElementById("modal-parts-list");
+
+            if (!parts.length) {
+                container.innerHTML = '<div class="modal-empty">Nenhuma parte cadastrada ainda.</div>';
+                return;
+            }
+
+            container.innerHTML = parts.map(p => {
+                const startMin = Math.floor(p.start_time / 60);
+                const startSeg = Math.floor(p.start_time % 60).toString().padStart(2, '0');
+                const endMin = Math.floor(p.end_time / 60);
+                const endSeg = Math.floor(p.end_time % 60).toString().padStart(2, '0');
+                const durationMin = (p.duration / 60).toFixed(1);
+
+                let statusHtml = '';
+                let selectBtn = '';
+
+                if (p.status === 'posted') {
+                    statusHtml = '<span class="badge status-posted">✅ Postado</span>';
+                } else if (p.status === 'processing') {
+                    statusHtml = '<span class="badge status-processing">⚙️ Processando...</span>';
+                } else if (p.status === 'failed') {
+                    statusHtml = '<span class="badge status-failed">❌ Falhou</span>';
+                    selectBtn = `<button onclick="selectPartForPost(${p.id}, ${p.part_number})" class="btn-select-part">Tentar Novamente</button>`;
+                } else {
+                    statusHtml = '<span class="badge status-pending">🕐 Pendente</span>';
+                    selectBtn = `<button onclick="selectPartForPost(${p.id}, ${p.part_number})" class="btn-select-part">Selecionar</button>`;
+                }
+
+                return `
+                    <div class="modal-part-row" id="part-row-${p.id}">
+                        <div class="modal-part-info">
+                            <span class="modal-part-num">Parte ${p.part_number}</span>
+                            <span class="modal-part-time">${startMin}:${startSeg} → ${endMin}:${endSeg} (${durationMin} min)</span>
+                        </div>
+                        <div class="modal-part-actions">
+                            ${statusHtml}
+                            ${selectBtn}
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        function selectPartForPost(partId, partNum) {
+            selectedPartId = partId;
+            // Highlight linha selecionada
+            document.querySelectorAll('.modal-part-row').forEach(r => r.classList.remove('selected-row'));
+            document.getElementById(`part-row-${partId}`).classList.add('selected-row');
+            updateModalPostInfo(partNum);
+        }
+
+        function updateModalPostInfo(partNum = null) {
+            const info = document.getElementById("modal-post-target");
+            const btn = document.getElementById("modal-post-btn");
+
+            if (!partNum || !selectedPartId) {
+                info.textContent = "Selecione uma parte acima para postar.";
+                btn.disabled = true;
+                return;
+            }
+
+            const platLabels = { tt: "TikTok", yt: "YouTube", both: "TikTok + YouTube", all: "Todas" };
+            const privLabels = { private: "Privado 🔒", public: "Público 🌐" };
+            info.innerHTML = `Pronto para postar: <strong>Parte ${partNum}</strong> em <strong>${platLabels[selectedPlatform]}</strong> como <strong>${privLabels[selectedPrivacy]}</strong>`;
+            btn.disabled = false;
+        }
+
+        function closeModal() {
+            document.getElementById("parts-modal").classList.add("hidden");
+            document.body.style.overflow = "";
+            selectedDramaId = null;
+            selectedPartId = null;
+        }
+
+        function closeModalOutside(event) {
+            if (event.target.id === "parts-modal") closeModal();
+        }
+
+        // Seletores de plataforma
+        function selectPlatform(platform) {
+            selectedPlatform = platform;
+            document.querySelectorAll('.platform-btn').forEach(b => b.classList.remove('active-platform'));
+            document.getElementById(`plat-${platform}`).classList.add('active-platform');
+            if (selectedPartId) {
+                const drama = currentDramas.find(d => d.id === selectedDramaId);
+                const part = drama?.parts?.find(p => p.id === selectedPartId);
+                if (part) updateModalPostInfo(part.part_number);
+            }
+        }
+
+        // Seletores de privacidade
+        function selectPrivacy(privacy) {
+            selectedPrivacy = privacy;
+            document.querySelectorAll('.privacy-btn').forEach(b => b.classList.remove('active-privacy'));
+            document.getElementById(`priv-${privacy}`).classList.add('active-privacy');
+            if (selectedPartId) {
+                const drama = currentDramas.find(d => d.id === selectedDramaId);
+                const part = drama?.parts?.find(p => p.id === selectedPartId);
+                if (part) updateModalPostInfo(part.part_number);
+            }
+        }
+
+        async function postSelectedPart() {
+            if (!selectedPartId) return;
+            const btn = document.getElementById("modal-post-btn");
+            btn.disabled = true;
+            btn.textContent = "⏳ Enviando...";
+
+            try {
+                // Mapeia privacidade para formato correto por plataforma
+                const ttPrivacyMap = { private: "SELF_ONLY", public: "PUBLIC_TO_EVERYONE" };
+                const ttPrivacy = ttPrivacyMap[selectedPrivacy] || selectedPrivacy;
+
+                const res = await fetchAPI(`/api/parts/${selectedPartId}/post`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        platform: selectedPlatform,
+                        privacy: ttPrivacy
+                    })
                 });
+
                 if (res.ok) {
-                    alert("Envio agendado com sucesso! O processo roda em background da VPS. Acompanhe atualizando a lista.");
+                    alert("✅ Pipeline de postagem iniciado! O processo roda em background. Atualize a lista para acompanhar.");
+                    closeModal();
                     loadDramas();
                 } else {
                     const data = await res.json();
-                    alert("Erro ao disparar postagem: " + (data.detail || "Erro do servidor"));
+                    alert("Erro: " + (data.detail || "Erro do servidor"));
                 }
-            } catch (e) {
-                alert("Erro ao tentar conectar com a API.");
+            } catch {
+                alert("Erro ao conectar com a API.");
             } finally {
-                buttonElement.disabled = false;
+                btn.disabled = false;
+                btn.textContent = "🚀 Postar Parte Selecionada";
             }
         }
 
-        async function deleteDrama(dramaId) {
-            if (!confirm("Aviso: Isso removerá todo o histórico e partes desse drama do painel. Deseja continuar?")) return;
-            try {
-                const res = await fetchAPI(`/api/dramas/${dramaId}`, {
-                    method: "DELETE"
-                });
-                if (res.ok) {
-                    loadDramas();
-                }
-            } catch (e) {
-                alert("Erro ao excluir drama.");
-            }
-        }
-
-        // --- SISTEMA DE ABAS ---
+        // --- TABS ---
         function switchTab(tabName) {
-            // Remove active classes
             document.querySelectorAll(".tab-btn").forEach(btn => {
-                btn.style.color = "var(--text-muted)";
-                btn.style.borderBottom = "none";
+                btn.classList.remove("active-tab");
             });
             document.querySelectorAll(".tab-content").forEach(c => c.classList.add("hidden"));
-
-            // Add active classes to selected tab
-            const activeBtn = document.getElementById(`tab-${tabName}`);
-            activeBtn.style.color = "var(--primary-color)";
-            activeBtn.style.borderBottom = "3px solid var(--primary-color)";
-
+            document.getElementById(`tab-${tabName}`).classList.add("active-tab");
             document.getElementById(`tab-content-${tabName}`).classList.remove("hidden");
-
-            if (tabName === "templates") {
-                loadTemplates();
-            } else if (tabName === "dramas") {
-                loadDramas();
-            }
+            if (tabName === "templates") loadTemplates();
+            else if (tabName === "dramas") loadDramas();
         }
 
-        // --- CRUD DE TEMPLATES ---
+        // --- TEMPLATES CRUD ---
         let currentTemplates = [];
 
         async function loadTemplates() {
             const container = document.getElementById("templates-list-container");
-            container.innerHTML = '<div class="loading-state">Carregando modelos de postagem...</div>';
-            
+            container.innerHTML = '<div class="loading-state">Carregando modelos...</div>';
             try {
                 const res = await fetchAPI("/api/templates");
                 const data = await res.json();
                 currentTemplates = data;
-
-                if (data.length === 0) {
-                    container.innerHTML = '<div class="empty-state">Nenhum modelo cadastrado. Crie um modelo clicando em "+ Novo Modelo".</div>';
+                if (!data.length) {
+                    container.innerHTML = '<div class="empty-state">Nenhum modelo cadastrado.</div>';
                     return;
                 }
-
-                container.innerHTML = data.map(t => {
-                    return `
-                        <div class="drama-card">
-                            <div class="drama-card-header">
-                                <div class="drama-info">
-                                    <h3 style="font-weight: 800; font-size: 1.15rem; color: var(--primary-color);">📝 ${t.name}</h3>
-                                </div>
-                                <div style="display: flex; gap: 10px;">
-                                    <button onclick="showEditTemplateForm(${t.id})" class="btn-post-part" style="padding: 6px 14px; font-size: 0.85rem;">Editar</button>
-                                    <button onclick="deleteTemplate(${t.id})" class="btn-delete-drama" style="padding: 6px 14px; font-size: 0.85rem;">Excluir</button>
-                                </div>
+                container.innerHTML = data.map(t => `
+                    <div class="drama-card">
+                        <div class="drama-card-header">
+                            <div class="drama-info">
+                                <h3 style="font-weight:800;font-size:1.1rem;color:var(--primary-color);">📝 ${t.name}</h3>
                             </div>
-                            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); padding: 15px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px; text-align: left; font-size: 0.9rem;">
-                                <div>
-                                    <strong style="color: var(--youtube-color);">📺 YouTube Título:</strong>
-                                    <pre style="white-space: pre-wrap; font-family: inherit; margin: 5px 0 0 0; color: var(--text-muted); font-size: 0.85rem; background: var(--bg-dark); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">${t.youtube_title || '{title} - Completo'}</pre>
-                                </div>
-                                <div>
-                                    <strong style="color: var(--youtube-color);">📺 YouTube Descrição:</strong>
-                                    <pre style="white-space: pre-wrap; font-family: inherit; margin: 5px 0 0 0; color: var(--text-muted); font-size: 0.85rem; background: var(--bg-dark); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">${t.youtube_desc}</pre>
-                                </div>
-                                <div>
-                                    <strong style="color: var(--tiktok-color);">🎵 TikTok Legenda:</strong>
-                                    <pre style="white-space: pre-wrap; font-family: inherit; margin: 5px 0 0 0; color: var(--text-muted); font-size: 0.85rem; background: var(--bg-dark); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">${t.tiktok_desc}</pre>
-                                </div>
-                                <div>
-                                    <strong style="color: var(--text-color);">🏷️ Tags:</strong>
-                                    <span style="color: var(--text-muted); background: var(--bg-dark); padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); font-size: 0.8rem; margin-left: 8px;">${t.tags}</span>
-                                </div>
+                            <div style="display:flex;gap:10px;">
+                                <button onclick="showEditTemplateForm(${t.id})" class="btn-post-part" style="padding:6px 14px;font-size:0.85rem;">Editar</button>
+                                <button onclick="deleteTemplate(${t.id})" class="btn-delete-drama" style="padding:6px 14px;font-size:0.85rem;">Excluir</button>
                             </div>
                         </div>
-                    `;
-                }).join("");
-
-            } catch (err) {
-                container.innerHTML = '<div class="error-state">Falha ao buscar modelos no servidor.</div>';
+                        <div style="background:rgba(255,255,255,0.02);border:1px solid var(--border-color);padding:15px;border-radius:12px;display:flex;flex-direction:column;gap:12px;font-size:0.85rem;">
+                            <div><strong style="color:var(--youtube-color);">📺 Título YT:</strong>
+                                <pre style="white-space:pre-wrap;font-family:inherit;margin:4px 0 0;color:var(--text-muted);background:var(--bg-dark);padding:8px;border-radius:8px;">${t.youtube_title || '{title} - Completo'}</pre></div>
+                            <div><strong style="color:var(--youtube-color);">📺 Desc YT:</strong>
+                                <pre style="white-space:pre-wrap;font-family:inherit;margin:4px 0 0;color:var(--text-muted);background:var(--bg-dark);padding:8px;border-radius:8px;">${t.youtube_desc}</pre></div>
+                            <div><strong style="color:var(--tiktok-color);">🎵 TikTok:</strong>
+                                <pre style="white-space:pre-wrap;font-family:inherit;margin:4px 0 0;color:var(--text-muted);background:var(--bg-dark);padding:8px;border-radius:8px;">${t.tiktok_desc}</pre></div>
+                            <div><strong>🏷️ Tags:</strong> <span style="color:var(--text-muted);margin-left:8px;">${t.tags}</span></div>
+                        </div>
+                    </div>
+                `).join("");
+            } catch {
+                container.innerHTML = '<div class="error-state">Falha ao buscar modelos.</div>';
             }
         }
 
@@ -479,78 +599,55 @@
             document.getElementById("template-yt-desc").value = "";
             document.getElementById("template-tt-desc").value = "";
             document.getElementById("template-tags").value = "";
-            
             document.getElementById("template-form-card").classList.remove("hidden");
             document.getElementById("template-form-card").scrollIntoView({ behavior: 'smooth' });
         }
 
         function showEditTemplateForm(id) {
-            const template = currentTemplates.find(t => t.id === id);
-            if (!template) return;
-
-            document.getElementById("template-form-title").textContent = "✏️ Editar Modelo de Postagem";
-            document.getElementById("template-id-field").value = template.id;
-            document.getElementById("template-name").value = template.name;
-            document.getElementById("template-yt-title").value = template.youtube_title || "{title} - Completo";
-            document.getElementById("template-yt-desc").value = template.youtube_desc;
-            document.getElementById("template-tt-desc").value = template.tiktok_desc;
-            document.getElementById("template-tags").value = template.tags;
-
+            const t = currentTemplates.find(t => t.id === id);
+            if (!t) return;
+            document.getElementById("template-form-title").textContent = "✏️ Editar Modelo";
+            document.getElementById("template-id-field").value = t.id;
+            document.getElementById("template-name").value = t.name;
+            document.getElementById("template-yt-title").value = t.youtube_title || "{title} - Completo";
+            document.getElementById("template-yt-desc").value = t.youtube_desc;
+            document.getElementById("template-tt-desc").value = t.tiktok_desc;
+            document.getElementById("template-tags").value = t.tags;
             document.getElementById("template-form-card").classList.remove("hidden");
             document.getElementById("template-form-card").scrollIntoView({ behavior: 'smooth' });
         }
 
-        function hideTemplateForm() {
-            document.getElementById("template-form-card").classList.add("hidden");
-        }
+        function hideTemplateForm() { document.getElementById("template-form-card").classList.add("hidden"); }
 
         async function saveTemplate() {
             const id = document.getElementById("template-id-field").value;
-            const name = document.getElementById("template-name").value.trim();
-            const ytTitle = document.getElementById("template-yt-title").value.trim();
-            const ytDesc = document.getElementById("template-yt-desc").value.trim();
-            const ttDesc = document.getElementById("template-tt-desc").value.trim();
-            const tags = document.getElementById("template-tags").value.trim();
-
-            if (!name || !ytTitle || !ytDesc || !ttDesc) {
-                alert("Por favor, preencha todos os campos obrigatórios.");
-                return;
+            const body = {
+                name: document.getElementById("template-name").value.trim(),
+                youtube_title: document.getElementById("template-yt-title").value.trim(),
+                youtube_desc: document.getElementById("template-yt-desc").value.trim(),
+                tiktok_desc: document.getElementById("template-tt-desc").value.trim(),
+                tags: document.getElementById("template-tags").value.trim()
+            };
+            if (!body.name || !body.youtube_title || !body.youtube_desc || !body.tiktok_desc) {
+                alert("Preencha todos os campos obrigatórios."); return;
             }
-
-            const body = { name, youtube_title: ytTitle, youtube_desc: ytDesc, tiktok_desc: ttDesc, tags };
-            const method = id ? "PUT" : "POST";
-            const endpoint = id ? `/api/templates/${id}` : "/api/templates";
-
             try {
-                const res = await fetchAPI(endpoint, {
-                    method: method,
+                const res = await fetchAPI(id ? `/api/templates/${id}` : "/api/templates", {
+                    method: id ? "PUT" : "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(body)
                 });
-
-                if (res.ok) {
-                    hideTemplateForm();
-                    loadTemplates();
-                } else {
-                    alert("Erro ao salvar modelo no banco.");
-                }
-            } catch (e) {
-                alert("Falha na comunicação com o servidor.");
-            }
+                if (res.ok) { hideTemplateForm(); loadTemplates(); }
+                else alert("Erro ao salvar modelo.");
+            } catch { alert("Falha na comunicação com o servidor."); }
         }
 
         async function deleteTemplate(id) {
-            if (!confirm("Tem certeza que deseja excluir este modelo de postagem?")) return;
+            if (!confirm("Excluir este modelo?")) return;
             try {
-                const res = await fetchAPI(`/api/templates/${id}`, {
-                    method: "DELETE"
-                });
-                if (res.ok) {
-                    loadTemplates();
-                }
-            } catch (e) {
-                alert("Erro ao excluir modelo.");
-            }
+                const res = await fetchAPI(`/api/templates/${id}`, { method: "DELETE" });
+                if (res.ok) loadTemplates();
+            } catch { alert("Erro ao excluir modelo."); }
         }
     </script>
 </body>

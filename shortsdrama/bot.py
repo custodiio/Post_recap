@@ -298,11 +298,10 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, plat
             file_name=os.path.basename(tmp_orig)
         )
         
-        # Salva a Parte 1 como publicada e enfileira as restantes como pending
-        db.save_part(drama_id, 1, p1['start_time'], p1['end_time'], p1['duration'], status='posted')
-        
-        for p in parts_plan[1:]:
-            db.save_part(drama_id, p['part_number'], p['start_time'], p['end_time'], p['duration'], status='pending')
+        # Salva APENAS a Parte 1 — as demais partes são postadas manualmente pelo painel web.
+        # Não pré-criamos as partes 2+ para evitar que o scheduler automático as poste
+        # como sequência de outro drama.
+        part1_id = db.save_part(drama_id, 1, p1['start_time'], p1['end_time'], p1['duration'], status='processing')
             
         # Gera metadados de postagem formatados pelo template
         meta = templates.format_post_meta(title, 1)
@@ -349,8 +348,26 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, plat
                 progress_callback=dm_progress
             )
         
+        # Atualiza o status da Parte 1 no banco após os uploads
+        any_success = tt_ok or yt_ok or dm_ok
+        if any_success:
+            db.update_part(part1_id, {
+                'status': 'posted',
+                'tiktok_publish_id': tt_id if tt_ok else None,
+                'youtube_video_id': yt_id if yt_ok else None,
+                'posted_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+        else:
+            db.update_part(part1_id, {'status': 'failed', 'error_message': 'Todos os uploads falharam.'})
+        
         # Finalização e Limpeza
-        result_text = f"✅ *PROCESSO CONCLUÍDO!*\n\n🎬 *Drama:* {title}\n🍿 *Total de Partes Enfileiradas (TikTok):* {len(parts_plan)}\n\n"
+        num_total_parts = len(parts_plan)
+        result_text = (
+            f"✅ *PROCESSO CONCLUÍDO!*\n\n"
+            f"🎬 *Drama:* {title}\n"
+            f"📂 *Total de partes disponíveis:* {num_total_parts} "
+            f"(poste as próximas pelo Painel Web)\n\n"
+        )
         if platform in ["yt", "both", "all"]:
             if yt_ok: result_text += f"📺 YouTube (Completo): Enviado (ID: `{yt_id}`)\n"
             else: result_text += f"❌ YouTube Falhou: {yt_id}\n"

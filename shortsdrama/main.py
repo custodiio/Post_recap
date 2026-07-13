@@ -84,6 +84,10 @@ class TemplateRequest(BaseModel):
     tiktok_desc: str
     tags: str
 
+class PostPartRequest(BaseModel):
+    platform: str = "tt"   # tt, yt, both, all
+    privacy: str = "SELF_ONLY"  # SELF_ONLY, PUBLIC_TO_EVERYONE, private, public
+
 # Endpoints de Autenticação
 @app.post("/dramas/api/auth/login")
 async def login(req: LoginRequest):
@@ -192,13 +196,12 @@ async def delete_template_endpoint(template_id: int, user: str = Depends(get_cur
     return {"status": "success"}
 
 @app.post("/dramas/api/parts/{part_id}/post")
-async def post_part_endpoint(part_id: int, user: str = Depends(get_current_user)):
+async def post_part_endpoint(part_id: int, req: PostPartRequest = PostPartRequest(), user: str = Depends(get_current_user)):
     """Dispara a postagem imediata de uma parte específica em background."""
-    # Como o corte e postagem demoram, disparamos como tarefa assíncrona do FastAPI
-    asyncio.create_task(run_manual_part_posting(part_id))
+    asyncio.create_task(run_manual_part_posting(part_id, req.platform, req.privacy))
     return {"status": "success", "message": "Pipeline de postagem iniciado em background."}
 
-async def run_manual_part_posting(part_id: int):
+async def run_manual_part_posting(part_id: int, platform: str = "tt", privacy: str = "SELF_ONLY"):
     """Executa o download, corte e envio da parte na VPS."""
     conn = db.get_connection()
     cursor = conn.cursor()
@@ -263,22 +266,44 @@ async def run_manual_part_posting(part_id: int):
             
         meta = templates.format_post_meta(title, part_num)
         
-        # TikTok Upload (apenas TikTok para as partes subsequentes)
-        tt_ok, tt_id = await uploader.upload_to_tiktok(
-            video_path=tmp_cut,
-            title=meta["tiktok_desc"],
-            privacy_level="SELF_ONLY"
-        )
+        # Upload para as plataformas escolhidas pelo usuário no painel
+        tt_ok, tt_id = False, "Pulado"
+        yt_ok, yt_id = False, "Pulado"
         
-        if tt_ok:
+        if platform in ["tt", "both", "all"]:
+            # TikTok: mapeia privacidade legível para constante da API
+            tt_privacy_map = {
+                "public": "PUBLIC_TO_EVERYONE",
+                "private": "SELF_ONLY",
+            }
+            tt_privacy = tt_privacy_map.get(privacy, privacy)  # aceita constante direta também
+            tt_ok, tt_id = await uploader.upload_to_tiktok(
+                video_path=tmp_cut,
+                title=meta["tiktok_desc"],
+                privacy_level=tt_privacy
+            )
+        
+        if platform in ["yt", "both", "all"]:
+            yt_privacy = "public" if privacy in ["public", "PUBLIC_TO_EVERYONE"] else "private"
+            yt_ok, yt_id = await uploader.upload_to_youtube(
+                video_path=tmp_cut,
+                title=meta["youtube_title"],
+                description=meta["youtube_desc"],
+                tags=meta["tags"],
+                privacy_status=yt_privacy
+            )
+        
+        any_success = tt_ok or yt_ok
+        if any_success:
             db.update_part(part_id, {
                 'status': 'posted',
-                'tiktok_publish_id': tt_id,
+                'tiktok_publish_id': tt_id if tt_ok else None,
+                'youtube_video_id': yt_id if yt_ok else None,
                 'posted_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
-            logger.info(f"[API] Parte {part_num} do drama '{title}' postada no TikTok com sucesso.")
+            logger.info(f"[API] Parte {part_num} do drama '{title}' postada com sucesso. Platform={platform}")
         else:
-            db.update_part(part_id, {'status': 'failed', 'error_message': "Upload falhou no TikTok."})
+            db.update_part(part_id, {'status': 'failed', 'error_message': f"Upload falhou. TikTok={tt_id} | YT={yt_id}"})
             
     except Exception as e:
         logger.error(f"[API] Falha no pipeline da parte {part_id}: {e}", exc_info=True)
