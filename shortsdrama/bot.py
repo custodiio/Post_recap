@@ -254,17 +254,17 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, priv
         # Gera metadados de postagem formatados pelo template
         meta = templates.format_post_meta(title, 1)
         
-        # Fase 4: Postagem no YouTube
-        await status_msg.edit_text("📤 Enviando Parte 1 para o YouTube...")
+        # Fase 4: Postagem no YouTube (Vídeo Completo)
+        await status_msg.edit_text("📤 Enviando Vídeo Completo para o YouTube...")
         yt_ok, yt_id = await uploader.upload_to_youtube(
-            video_path=tmp_cut,
-            title=meta["title"],
+            video_path=tmp_orig,
+            title=meta["youtube_title"],
             description=meta["youtube_desc"],
             tags=meta["tags"],
             privacy_status=privacy
         )
         
-        # Fase 5: Postagem no TikTok
+        # Fase 5: Postagem no TikTok (Parte 1 Fatiada)
         await status_msg.edit_text("📤 Enviando Parte 1 para o TikTok...")
         tt_ok, tt_id = await uploader.upload_to_tiktok(
             video_path=tmp_cut,
@@ -273,11 +273,11 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, priv
         )
         
         # Finalização e Limpeza
-        result_text = f"✅ *PROCESSO CONCLUÍDO!*\n\n🎬 *Drama:* {title}\n🍿 *Total de Partes Enfileiradas:* {len(parts_plan)}\n\n"
-        if yt_ok: result_text += f"📺 YouTube: Enviado (ID: `{yt_id}`)\n"
+        result_text = f"✅ *PROCESSO CONCLUÍDO!*\n\n🎬 *Drama:* {title}\n🍿 *Total de Partes Enfileiradas (TikTok):* {len(parts_plan)}\n\n"
+        if yt_ok: result_text += f"📺 YouTube (Completo): Enviado (ID: `{yt_id}`)\n"
         else: result_text += f"❌ YouTube Falhou: {yt_id}\n"
         
-        if tt_ok: result_text += f"🎵 TikTok: Enviado (ID: `{tt_id}`)\n"
+        if tt_ok: result_text += f"🎵 TikTok (Parte 1): Enviado (ID: `{tt_id}`)\n"
         else: result_text += f"❌ TikTok Falhou: {tt_id}\n"
         
         await status_msg.edit_text(result_text, parse_mode=ParseMode.MARKDOWN)
@@ -396,17 +396,7 @@ async def _process_pending_part(chat_id: int, part_id: int, context: ContextType
             
         meta = templates.format_post_meta(title, part_num)
         
-        # Postagem no YouTube
-        await progress(f"📤 Enviando Parte {part_num} para o YouTube...")
-        yt_ok, yt_id = await uploader.upload_to_youtube(
-            video_path=tmp_cut,
-            title=meta["title"],
-            description=meta["youtube_desc"],
-            tags=meta["tags"],
-            privacy_status="private" # Padrão
-        )
-        
-        # Postagem no TikTok
+        # Postagem no TikTok (apenas TikTok para as partes subsequentes)
         await progress(f"📤 Enviando Parte {part_num} para o TikTok...")
         tt_ok, tt_id = await uploader.upload_to_tiktok(
             video_path=tmp_cut,
@@ -414,16 +404,15 @@ async def _process_pending_part(chat_id: int, part_id: int, context: ContextType
             privacy_level="SELF_ONLY"
         )
         
-        if yt_ok or tt_ok:
+        if tt_ok:
             db.update_part(part_id, {
                 'status': 'posted',
-                'tiktok_publish_id': tt_id if tt_ok else None,
-                'youtube_video_id': yt_id if yt_ok else None,
+                'tiktok_publish_id': tt_id,
                 'posted_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
-            await status_msg.edit_text(f"✅ *Parte {part_num} publicada com sucesso!*\n🔗 YouTube ID: `{yt_id}`\n🎵 TikTok ID: `{tt_id}`", parse_mode=ParseMode.MARKDOWN)
+            await status_msg.edit_text(f"✅ *Parte {part_num} publicada com sucesso!*\n🎵 TikTok ID: `{tt_id}`", parse_mode=ParseMode.MARKDOWN)
         else:
-            await status_msg.edit_text("❌ Falha na postagem em ambas as redes.")
+            await status_msg.edit_text("❌ Falha na postagem no TikTok.")
             
     except Exception as e:
         logger.error(f"[BOT] Erro ao postar Parte {part_num}: {e}", exc_info=True)

@@ -62,18 +62,25 @@ def format_post_meta(title: str, part_number: int, template_key: str = "drama_em
     template = DESCRIPTION_TEMPLATES.get(template_key, DESCRIPTION_TEMPLATES["drama_emocionante"])
     part_str = f"Parte {part_number}"
     
-    # Formata título para YouTube (limite clássico de 100 caracteres)
-    formatted_title = f"{title} - {part_str}"
-    if len(formatted_title) > 95:
-         formatted_title = formatted_title[:92] + "..."
+    # Formata título para YouTube (Completo, sem fatiar)
+    yt_title = f"{title} - Completo"
+    if len(yt_title) > 95:
+         yt_title = yt_title[:92] + "..."
+         
+    # Formata título para TikTok (Fatiado em partes)
+    tt_title = f"{title} - {part_str}"
+    if len(tt_title) > 95:
+         tt_title = tt_title[:92] + "..."
          
     # Formata descrições
-    yt_desc = template["youtube_desc"].format(title=title, part_str=part_str)
+    yt_desc = template["youtube_desc"].format(title=title, part_str="Completo")
     tt_desc = template["tiktok_desc"].format(title=title, part_str=part_str)
     
     return {
-        "title": formatted_title,
+        "title": tt_title,              # Retorna título do TikTok por padrão
+        "youtube_title": yt_title,      # Título limpo/completo do YouTube
         "youtube_desc": yt_desc,
         "tiktok_desc": tt_desc,
         "tags": template["tags"]
     }
+

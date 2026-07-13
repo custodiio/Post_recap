@@ -234,32 +234,22 @@ async def run_manual_part_posting(part_id: int):
             
         meta = templates.format_post_meta(title, part_num)
         
-        # YouTube Upload
-        yt_ok, yt_id = await uploader.upload_to_youtube(
-            video_path=tmp_cut,
-            title=meta["title"],
-            description=meta["youtube_desc"],
-            tags=meta["tags"],
-            privacy_status=db.get_setting("youtube_default_privacy", "private")
-        )
-        
-        # TikTok Upload
+        # TikTok Upload (apenas TikTok para as partes subsequentes)
         tt_ok, tt_id = await uploader.upload_to_tiktok(
             video_path=tmp_cut,
             title=meta["tiktok_desc"],
             privacy_level="SELF_ONLY"
         )
         
-        if yt_ok or tt_ok:
+        if tt_ok:
             db.update_part(part_id, {
                 'status': 'posted',
-                'tiktok_publish_id': tt_id if tt_ok else None,
-                'youtube_video_id': yt_id if yt_ok else None,
+                'tiktok_publish_id': tt_id,
                 'posted_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
-            logger.info(f"[API] Parte {part_num} do drama '{title}' postada com sucesso.")
+            logger.info(f"[API] Parte {part_num} do drama '{title}' postada no TikTok com sucesso.")
         else:
-            db.update_part(part_id, {'status': 'failed', 'error_message': "Upload falhou em ambas as plataformas."})
+            db.update_part(part_id, {'status': 'failed', 'error_message': "Upload falhou no TikTok."})
             
     except Exception as e:
         logger.error(f"[API] Falha no pipeline da parte {part_id}: {e}", exc_info=True)
