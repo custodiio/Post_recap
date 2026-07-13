@@ -4,6 +4,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+class _SafeDict(dict):
+    """Deixa chaves desconhecidas intactas em vez de lançar KeyError."""
+    def __missing__(self, key):
+        logger.warning(f"[TEMPLATES] Chave desconhecida no template: '{{{key}}}' — verifique o cadastro no painel.")
+        return f"{{{key}}}"
+
 # Fallbacks padrão caso as configurações no banco estejam vazias
 DEFAULT_YT_TITLE_TEMPLATE = "{title} - Completo"
 DEFAULT_YT_DESC_TEMPLATES = [
@@ -83,7 +89,8 @@ def format_post_meta(title: str, part_number: int) -> dict:
     part_str = f"Parte {part_number}"
     
     # 2. Formata os títulos de forma dinâmica
-    yt_title = yt_title_pattern.format(title=title, part_str="Completo")
+    fmt_vars = _SafeDict(title=title, part_str="Completo")
+    yt_title = yt_title_pattern.format_map(fmt_vars)
     if len(yt_title) > 95:
          yt_title = yt_title[:92] + "..."
          
@@ -92,8 +99,8 @@ def format_post_meta(title: str, part_number: int) -> dict:
          tt_title = tt_title[:92] + "..."
          
     # 3. Formata descrições
-    yt_desc = chosen_yt_desc_template.format(title=title, part_str="Completo")
-    tt_desc = chosen_tt_desc_template.format(title=title, part_str=part_str)
+    yt_desc = chosen_yt_desc_template.format_map(_SafeDict(title=title, part_str="Completo"))
+    tt_desc = chosen_tt_desc_template.format_map(_SafeDict(title=title, part_str=part_str))
     
     logger.info(f"[TEMPLATES] Metadados gerados por rotação sequencial de templates (ID: {model['id'] if db_templates else 'fallback'}).")
     
