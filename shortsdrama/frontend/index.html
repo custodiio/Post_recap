@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShortsDrama Studio - Painel de Controle</title>
+    <link rel="stylesheet" href="/dramas/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <!-- TELA DE LOGIN -->
+    <div id="login-container" class="auth-wrapper">
+        <div class="auth-card">
+            <div class="logo">
+                <span class="icon">🎬</span>
+                <h2>ShortsDrama Studio</h2>
+                <p>Insira seu e-mail administrativo para entrar</p>
+            </div>
+            <div class="form-group">
+                <input type="email" id="login-email" placeholder="nome@exemplo.com" required>
+                <button onclick="handleLogin()" id="btn-login">Entrar no Dashboard</button>
+            </div>
+            <div id="login-error" class="error-alert hidden"></div>
+        </div>
+    </div>
+
+    <!-- MAIN INTERFACE (DASHBOARD) -->
+    <div id="app-container" class="dashboard-wrapper hidden">
+        
+        <!-- HEADER -->
+        <header class="main-header">
+            <div class="header-logo">
+                <span class="icon">🎭</span>
+                <h1>ShortsDrama <span>Studio</span></h1>
+            </div>
+            <div class="user-profile">
+                <span id="user-email">email@admin.com</span>
+                <button onclick="handleLogout()" class="btn-logout">Sair</button>
+            </div>
+        </header>
+
+        <!-- DASHBOARD GRID -->
+        <main class="dashboard-grid">
+            
+            <!-- LEFT COLUMN: SETTINGS & QUICK CONTROLS -->
+            <section class="control-panel">
+                <div class="panel-card">
+                    <h3>⚡ Robôs Automatizados</h3>
+                    <div class="status-toggles">
+                        <div class="toggle-group">
+                            <div class="toggle-info">
+                                <strong>Auto-Poster TikTok</strong>
+                                <span class="desc">Postagem agendada automática</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-tiktok" onchange="saveConfigFromUI()">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="toggle-group">
+                            <div class="toggle-info">
+                                <strong>Auto-Poster YouTube</strong>
+                                <span class="desc">Envio privado programado</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-youtube" onchange="saveConfigFromUI()">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-card">
+                    <h3>⚙️ Configurações Gerais</h3>
+                    <div class="form-group">
+                        <label for="posts-per-day">Frequência Diária (Posts por Dia)</label>
+                        <input type="number" id="posts-per-day" min="1" max="10" value="2">
+                    </div>
+                    <div class="form-group">
+                        <label for="scheduled-hours">Horários de Postagem (separados por vírgula)</label>
+                        <input type="text" id="scheduled-hours" placeholder="12:00, 18:00">
+                    </div>
+                    <div class="form-group">
+                        <label for="yt-privacy">Privacidade Padrão YouTube</label>
+                        <select id="yt-privacy">
+                            <option value="private">🔒 Privado (Private)</option>
+                            <option value="public">🌐 Público (Public)</option>
+                            <option value="unlisted">🔗 Não Listado (Unlisted)</option>
+                        </select>
+                    </div>
+                    <button onclick="saveSettings()" class="btn-primary" id="btn-save-settings">Salvar Configurações</button>
+                    <div id="settings-success" class="success-alert hidden">Configurações salvas com sucesso!</div>
+                </div>
+            </section>
+
+            <!-- RIGHT COLUMN: DRAMAS LIST & PROGRESS -->
+            <section class="dramas-list-section">
+                <div class="section-header">
+                    <h2>🎬 Fila e Histórico de Dramas</h2>
+                    <button onclick="loadDramas()" class="btn-secondary">🔄 Atualizar Fila</button>
+                </div>
+                
+                <div id="dramas-container" class="dramas-list">
+                    <!-- Cards de dramas injetados via JS -->
+                    <div class="loading-state">Carregando lista de doramas...</div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        const API_URL = ""; // Relativo à rota do backend FastAPI
+        let sessionId = localStorage.getItem("session_id") || "";
+
+        // Inicialização automática
+        document.addEventListener("DOMContentLoaded", () => {
+            if (sessionId) {
+                showDashboard();
+            } else {
+                showLogin();
+            }
+        });
+
+        function showLogin() {
+            document.getElementById("login-container").classList.remove("hidden");
+            document.getElementById("app-container").classList.add("hidden");
+        }
+
+        function showDashboard() {
+            document.getElementById("login-container").classList.add("hidden");
+            document.getElementById("app-container").classList.remove("hidden");
+            
+            // Puxa dados da sessão
+            const email = localStorage.getItem("email") || "Admin User";
+            document.getElementById("user-email").textContent = email;
+            
+            loadSettings();
+            loadDramas();
+        }
+
+        async function handleLogin() {
+            const email = document.getElementById("login-email").value;
+            const btn = document.getElementById("btn-login");
+            const errDiv = document.getElementById("login-error");
+            
+            if (!email) return;
+            btn.disabled = true;
+            errDiv.classList.add("hidden");
+
+            try {
+                const res = await fetch("/api/auth/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email })
+                });
+                
+                const data = await res.json();
+                if (res.ok) {
+                    localStorage.setItem("session_id", data.session_id);
+                    localStorage.setItem("email", email);
+                    sessionId = data.session_id;
+                    showDashboard();
+                } else {
+                    errDiv.textContent = data.detail || "Erro ao fazer login.";
+                    errDiv.classList.remove("hidden");
+                }
+            } catch (err) {
+                errDiv.textContent = "Falha ao se conectar ao servidor.";
+                errDiv.classList.remove("hidden");
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                await fetch("/api/auth/logout", {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${sessionId}` }
+                });
+            } catch (e) {}
+            localStorage.removeItem("session_id");
+            localStorage.removeItem("email");
+            sessionId = "";
+            showLogin();
+        }
+
+        async function fetchAPI(endpoint, options = {}) {
+            if (!options.headers) options.headers = {};
+            options.headers["Authorization"] = `Bearer ${sessionId}`;
+            
+            const res = await fetch(endpoint, options);
+            if (res.status === 401) {
+                handleLogout();
+                throw new Error("Sessão expirada");
+            }
+            return res;
+        }
+
+        async function loadSettings() {
+            try {
+                const res = await fetchAPI("/api/settings");
+                const data = await res.json();
+                
+                document.getElementById("toggle-tiktok").checked = data.tiktok_auto_post === "1";
+                document.getElementById("toggle-youtube").checked = data.youtube_auto_post === "1";
+                document.getElementById("posts-per-day").value = data.posts_per_day;
+                document.getElementById("scheduled-hours").value = data.scheduled_hours;
+                document.getElementById("yt-privacy").value = data.youtube_default_privacy;
+            } catch (e) {
+                console.error("Erro carregando configurações:", e);
+            }
+        }
+
+        async function saveSettings() {
+            const btn = document.getElementById("btn-save-settings");
+            const successDiv = document.getElementById("settings-success");
+            btn.disabled = true;
+            successDiv.classList.add("hidden");
+
+            const body = {
+                tiktok_auto_post: document.getElementById("toggle-tiktok").checked ? "1" : "0",
+                youtube_auto_post: document.getElementById("toggle-youtube").checked ? "1" : "0",
+                posts_per_day: document.getElementById("posts-per-day").value,
+                scheduled_hours: document.getElementById("scheduled-hours").value,
+                youtube_default_privacy: document.getElementById("yt-privacy").value
+            };
+
+            try {
+                const res = await fetchAPI("/api/settings", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                
+                if (res.ok) {
+                    successDiv.classList.remove("hidden");
+                    setTimeout(() => successDiv.classList.add("hidden"), 3000);
+                }
+            } catch (e) {
+                alert("Erro ao salvar configurações.");
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function saveConfigFromUI() {
+            // Salva de forma automática ao clicar nos switches
+            await saveSettings();
+        }
+
+        async function loadDramas() {
+            const container = document.getElementById("dramas-container");
+            container.innerHTML = '<div class="loading-state">Carregando lista de doramas...</div>';
+
+            try {
+                const res = await fetchAPI("/api/dramas");
+                const dramas = await res.json();
+                
+                if (!dramas.length) {
+                    container.innerHTML = '<div class="empty-state">Nenhum drama cadastrado no banco de dados.</div>';
+                    return;
+                }
+
+                container.innerHTML = dramas.map(d => {
+                    const createdDate = new Date(d.created_at).toLocaleString('pt-BR');
+                    
+                    // Constrói HTML das partes
+                    const partsHtml = d.parts.map(p => {
+                        let statusClass = "status-pending";
+                        let statusText = "Pendente";
+                        let actionsHtml = "";
+
+                        if (p.status === "posted") {
+                            statusClass = "status-posted";
+                            statusText = "Publicado";
+                        } else if (p.status === "processing") {
+                            statusClass = "status-processing";
+                            statusText = "Fatiando/Enviando...";
+                        } else if (p.status === "failed") {
+                            statusClass = "status-failed";
+                            statusText = "Falhou";
+                            actionsHtml = `<button onclick="postPart(${p.id}, this)" class="btn-retry-part">Tentar Novamente</button>`;
+                        } else {
+                            // Pendente - pode disparar
+                            actionsHtml = `<button onclick="postPart(${p.id}, this)" class="btn-post-part">Postar Parte {X}</button>`.replace("{X}", p.part_number);
+                        }
+
+                        const startMin = Math.floor(p.start_time / 60);
+                        const startSeg = Math.floor(p.start_time % 60);
+                        const endMin = Math.floor(p.end_time / 60);
+                        const endSeg = Math.floor(p.end_time % 60);
+
+                        return `
+                            <div class="part-row">
+                                <span class="part-name">Fatia ${p.part_number} (${startMin}:${startSeg.toString().padStart(2, '0')} - ${endMin}:${endSeg.toString().padStart(2, '0')})</span>
+                                <div class="part-status-actions">
+                                    <span class="badge ${statusClass}">${statusText}</span>
+                                    ${actionsHtml}
+                                </div>
+                            </div>
+                        `;
+                    }).join("");
+
+                    return `
+                        <div class="drama-card">
+                            <div class="drama-card-header">
+                                <div class="drama-info">
+                                    <h3>🎬 ${d.title}</h3>
+                                    <span class="drama-meta">Cadastrado em: ${createdDate} | Tamanho: ${(d.file_size / (1024*1024)).toFixed(1)} MB</span>
+                                </div>
+                                <button onclick="deleteDrama(${d.id})" class="btn-delete-drama">Excluir Drama</button>
+                            </div>
+                            <div class="drama-parts-box">
+                                ${partsHtml}
+                            </div>
+                        </div>
+                    `;
+                }).join("");
+
+            } catch (err) {
+                container.innerHTML = '<div class="error-state">Falha ao buscar dados do servidor.</div>';
+            }
+        }
+
+        async function postPart(partId, buttonElement) {
+            if (!confirm("Confirmar fatiamento inteligente de 6-8min com recap de 30s e postagem imediata?")) return;
+            buttonElement.disabled = true;
+            buttonElement.textContent = "Enviando...";
+            
+            try {
+                const res = await fetchAPI(`/api/parts/${partId}/post`, {
+                    method: "POST"
+                });
+                if (res.ok) {
+                    alert("Envio agendado com sucesso! O processo roda em background da VPS. Acompanhe atualizando a lista.");
+                    loadDramas();
+                } else {
+                    const data = await res.json();
+                    alert("Erro ao disparar postagem: " + (data.detail || "Erro do servidor"));
+                }
+            } catch (e) {
+                alert("Erro ao tentar conectar com a API.");
+            } finally {
+                buttonElement.disabled = false;
+            }
+        }
+
+        async function deleteDrama(dramaId) {
+            if (!confirm("Aviso: Isso removerá todo o histórico e partes desse drama do painel. Deseja continuar?")) return;
+            try {
+                const res = await fetchAPI(`/api/dramas/${dramaId}`, {
+                    method: "DELETE"
+                });
+                if (res.ok) {
+                    loadDramas();
+                }
+            } catch (e) {
+                alert("Erro ao excluir drama.");
+            }
+        }
+    </script>
+</body>
+</html>
