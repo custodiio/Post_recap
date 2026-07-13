@@ -75,6 +75,7 @@ class SettingsUpdate(BaseModel):
     posts_per_day: str
     scheduled_hours: str
     youtube_default_privacy: str
+    tiktok_default_privacy: str = "SELF_ONLY"
 
 class TemplateRequest(BaseModel):
     name: str
@@ -157,7 +158,8 @@ async def get_settings(user: str = Depends(get_current_user)):
         "youtube_auto_post": db.get_setting("youtube_auto_post", "0"),
         "posts_per_day": db.get_setting("posts_per_day", "2"),
         "scheduled_hours": db.get_setting("scheduled_hours", "12:00,18:00"),
-        "youtube_default_privacy": db.get_setting("youtube_default_privacy", "private")
+        "youtube_default_privacy": db.get_setting("youtube_default_privacy", "private"),
+        "tiktok_default_privacy": db.get_setting("tiktok_default_privacy", "SELF_ONLY")
     }
 
 @app.post("/dramas/api/settings")
@@ -167,6 +169,7 @@ async def update_settings_endpoint(settings: SettingsUpdate, user: str = Depends
     db.update_setting("posts_per_day", settings.posts_per_day)
     db.update_setting("scheduled_hours", settings.scheduled_hours)
     db.update_setting("youtube_default_privacy", settings.youtube_default_privacy)
+    db.update_setting("tiktok_default_privacy", settings.tiktok_default_privacy)
     return {"status": "success", "message": "Configurações atualizadas."}
 
 @app.get("/dramas/api/templates")

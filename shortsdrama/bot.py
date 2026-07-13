@@ -324,10 +324,11 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, plat
         tt_ok, tt_id = False, "Pulado"
         if platform in ["tt", "both", "all"]:
             await status_msg.edit_text("📤 Enviando Parte 1 para o TikTok...")
+            tt_privacy = db.get_setting("tiktok_default_privacy", "SELF_ONLY")
             tt_ok, tt_id = await uploader.upload_to_tiktok(
                 video_path=tmp_cut,
                 title=meta["tiktok_desc"],
-                privacy_level="PUBLIC" if privacy == "public" else "SELF_ONLY"
+                privacy_level=tt_privacy
             )
 
         # Fase 6: Postagem no Dailymotion (Vídeo Completo)
@@ -486,10 +487,11 @@ async def _process_pending_part(chat_id: int, part_id: int, context: ContextType
         
         # Postagem no TikTok (apenas TikTok para as partes subsequentes)
         await progress(f"📤 Enviando Parte {part_num} para o TikTok...")
+        tt_privacy = db.get_setting("tiktok_default_privacy", "SELF_ONLY")
         tt_ok, tt_id = await uploader.upload_to_tiktok(
             video_path=tmp_cut,
             title=meta["tiktok_desc"],
-            privacy_level="SELF_ONLY"
+            privacy_level=tt_privacy
         )
         
         if tt_ok:
