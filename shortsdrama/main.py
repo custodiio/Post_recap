@@ -84,7 +84,7 @@ class TemplateRequest(BaseModel):
     tags: str
 
 # Endpoints de Autenticação
-@app.post("/api/auth/login")
+@app.post("/dramas/api/auth/login")
 async def login(req: LoginRequest):
     # Aceita os mesmos e-mails aprovados do painel principal
     allowed_emails = ["alecust123@gmail.com", "allessandrocustodio.alves@gmail.com"]
@@ -105,7 +105,7 @@ async def login(req: LoginRequest):
     )
     return response
 
-@app.post("/api/auth/logout")
+@app.post("/dramas/api/auth/logout")
 async def logout(request: Request):
     session_id = request.cookies.get("session_id")
     if session_id:
@@ -129,7 +129,7 @@ def get_current_user(request: Request):
     return ACTIVE_SESSIONS[session_id]["username"]
 
 # Endpoints do Dashboard
-@app.get("/api/dramas")
+@app.get("/dramas/api/dramas")
 async def list_dramas(user: str = Depends(get_current_user)):
     dramas = db.get_all_dramas()
     # Adiciona as partes de cada drama no retorno
@@ -137,7 +137,7 @@ async def list_dramas(user: str = Depends(get_current_user)):
         d["parts"] = db.get_parts_for_drama(d["id"])
     return dramas
 
-@app.get("/api/dramas/{drama_id}")
+@app.get("/dramas/api/dramas/{drama_id}")
 async def get_drama_details(drama_id: int, user: str = Depends(get_current_user)):
     drama = db.get_drama(drama_id)
     if not drama:
@@ -145,12 +145,12 @@ async def get_drama_details(drama_id: int, user: str = Depends(get_current_user)
     parts = db.get_parts_for_drama(drama_id)
     return {"drama": drama, "parts": parts}
 
-@app.delete("/api/dramas/{drama_id}")
+@app.delete("/dramas/api/dramas/{drama_id}")
 async def delete_drama_endpoint(drama_id: int, user: str = Depends(get_current_user)):
     db.delete_drama(drama_id)
     return {"status": "success", "message": "Drama excluído com sucesso."}
 
-@app.get("/api/settings")
+@app.get("/dramas/api/settings")
 async def get_settings(user: str = Depends(get_current_user)):
     return {
         "tiktok_auto_post": db.get_setting("tiktok_auto_post", "0"),
@@ -160,7 +160,7 @@ async def get_settings(user: str = Depends(get_current_user)):
         "youtube_default_privacy": db.get_setting("youtube_default_privacy", "private")
     }
 
-@app.post("/api/settings")
+@app.post("/dramas/api/settings")
 async def update_settings_endpoint(settings: SettingsUpdate, user: str = Depends(get_current_user)):
     db.update_setting("tiktok_auto_post", settings.tiktok_auto_post)
     db.update_setting("youtube_auto_post", settings.youtube_auto_post)
@@ -169,26 +169,26 @@ async def update_settings_endpoint(settings: SettingsUpdate, user: str = Depends
     db.update_setting("youtube_default_privacy", settings.youtube_default_privacy)
     return {"status": "success", "message": "Configurações atualizadas."}
 
-@app.get("/api/templates")
+@app.get("/dramas/api/templates")
 async def get_templates(user: str = Depends(get_current_user)):
     return db.get_all_templates()
 
-@app.post("/api/templates")
+@app.post("/dramas/api/templates")
 async def create_template(req: TemplateRequest, user: str = Depends(get_current_user)):
     t_id = db.save_template(req.name, req.youtube_title, req.youtube_desc, req.tiktok_desc, req.tags)
     return {"status": "success", "id": t_id}
 
-@app.put("/api/templates/{template_id}")
+@app.put("/dramas/api/templates/{template_id}")
 async def update_template_endpoint(template_id: int, req: TemplateRequest, user: str = Depends(get_current_user)):
     db.update_template(template_id, req.name, req.youtube_title, req.youtube_desc, req.tiktok_desc, req.tags)
     return {"status": "success"}
 
-@app.delete("/api/templates/{template_id}")
+@app.delete("/dramas/api/templates/{template_id}")
 async def delete_template_endpoint(template_id: int, user: str = Depends(get_current_user)):
     db.delete_template(template_id)
     return {"status": "success"}
 
-@app.post("/api/parts/{part_id}/post")
+@app.post("/dramas/api/parts/{part_id}/post")
 async def post_part_endpoint(part_id: int, user: str = Depends(get_current_user)):
     """Dispara a postagem imediata de uma parte específica em background."""
     # Como o corte e postagem demoram, disparamos como tarefa assíncrona do FastAPI

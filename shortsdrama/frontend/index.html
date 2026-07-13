@@ -169,11 +169,11 @@
     </div>
 
     <script>
-        const API_URL = ""; // Relativo à rota do backend FastAPI
+        const API_URL = "/dramas"; // Prefixo dinâmico do backend de dramas
         // Inicialização automática - testa se há sessão ativa via cookie
         document.addEventListener("DOMContentLoaded", async () => {
             try {
-                const res = await fetch("/api/settings");
+                const res = await fetch(API_URL + "/api/settings");
                 if (res.ok) {
                     showDashboard();
                 } else {
@@ -202,7 +202,7 @@
 
         async function handleLogout() {
             try {
-                await fetch("/api/auth/logout", {
+                await fetch(API_URL + "/api/auth/logout", {
                     method: "POST"
                 });
             } catch (e) {}
@@ -210,7 +210,7 @@
         }
 
         async function fetchAPI(endpoint, options = {}) {
-            const res = await fetch(endpoint, options);
+            const res = await fetch(API_URL + endpoint, options);
             if (res.status === 401) {
                 showLogin();
                 throw new Error("Sessão expirada");
