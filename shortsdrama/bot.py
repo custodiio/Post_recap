@@ -86,6 +86,9 @@ async def _show_panel(update: Update, context: ContextTypes.DEFAULT_TYPE, edit: 
         ],
         [
             InlineKeyboardButton("📚 Ver Partes Pendentes", callback_data="view_pending"),
+            InlineKeyboardButton("🔑 Acessar Painel Web", callback_data="generate_login_link")
+        ],
+        [
             InlineKeyboardButton("🔄 Atualizar Painel", callback_data="refresh_lobby")
         ]
     ]
@@ -115,6 +118,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if data == "refresh_lobby":
         await _show_panel(update, context, edit=True)
+        
+    elif data == "generate_login_link":
+        import uuid
+        token = str(uuid.uuid4())
+        db.create_login_token("allessandrocustodio.alves@gmail.com", token)
+        login_url = f"https://animesrecaps.me/dramas?token={token}"
+        await query.message.reply_text(
+            f"🔑 *Link de Acesso Único (Válido por 10 minutos):*\n\n"
+            f"🔗 [Clique aqui para entrar no Painel]({login_url})\n\n"
+            f"_Após entrar, a sua sessão no navegador durará 1 hora._",
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=True
+        )
         
     elif data == "toggle_auto_tt":
         current = db.get_setting('tiktok_auto_post', '0')
@@ -422,12 +438,28 @@ async def _process_pending_part(chat_id: int, part_id: int, context: ContextType
         if os.path.exists(tmp_cut): os.remove(tmp_cut)
         if client: await client.disconnect()
 
+@admin_only
+async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gera um link de login válido por 10 minutos."""
+    import uuid
+    token = str(uuid.uuid4())
+    db.create_login_token("allessandrocustodio.alves@gmail.com", token)
+    login_url = f"https://animesrecaps.me/dramas?token={token}"
+    await update.message.reply_text(
+        f"🔑 *Link de Acesso Único (Válido por 10 minutos):*\n\n"
+        f"🔗 [Clique aqui para entrar no Painel]({login_url})\n\n"
+        f"_Após entrar, a sua sessão no navegador durará 1 hora._",
+        parse_mode=ParseMode.MARKDOWN,
+        disable_web_page_preview=True
+    )
+
 def main():
     """Inicialização do Bot."""
     db.init_db()
     app = Application.builder().token(BOT_TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("login", login_command))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, link_handler))
     

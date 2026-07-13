@@ -76,6 +76,12 @@ class SettingsUpdate(BaseModel):
     scheduled_hours: str
     youtube_default_privacy: str
 
+class TemplateRequest(BaseModel):
+    name: str
+    youtube_desc: str
+    tiktok_desc: str
+    tags: str
+
 # Endpoints de Autenticação
 @app.post("/api/auth/login")
 async def login(req: LoginRequest):
@@ -161,6 +167,25 @@ async def update_settings_endpoint(settings: SettingsUpdate, user: str = Depends
     db.update_setting("scheduled_hours", settings.scheduled_hours)
     db.update_setting("youtube_default_privacy", settings.youtube_default_privacy)
     return {"status": "success", "message": "Configurações atualizadas."}
+
+@app.get("/api/templates")
+async def get_templates(user: str = Depends(get_current_user)):
+    return db.get_all_templates()
+
+@app.post("/api/templates")
+async def create_template(req: TemplateRequest, user: str = Depends(get_current_user)):
+    t_id = db.save_template(req.name, req.youtube_desc, req.tiktok_desc, req.tags)
+    return {"status": "success", "id": t_id}
+
+@app.put("/api/templates/{template_id}")
+async def update_template_endpoint(template_id: int, req: TemplateRequest, user: str = Depends(get_current_user)):
+    db.update_template(template_id, req.name, req.youtube_desc, req.tiktok_desc, req.tags)
+    return {"status": "success"}
+
+@app.delete("/api/templates/{template_id}")
+async def delete_template_endpoint(template_id: int, user: str = Depends(get_current_user)):
+    db.delete_template(template_id)
+    return {"status": "success"}
 
 @app.post("/api/parts/{part_id}/post")
 async def post_part_endpoint(part_id: int, user: str = Depends(get_current_user)):
@@ -323,7 +348,47 @@ if os.path.exists(frontend_path):
     app.mount("/dramas/static", StaticFiles(directory=frontend_path), name="static")
 
 @app.get("/dramas", response_class=HTMLResponse)
-async def get_dashboard_page(request: Request):
+async def get_dashboard_page(request: Request, token: Optional[str] = None):
+    # Fluxo de login automático via Token do Telegram
+    if token:
+        email = db.consume_login_token(token)
+        if email:
+            session_id = create_session(email)
+            response = RedirectResponse(url="/dramas", status_code=303)
+            response.set_cookie(
+                key="session_id",
+                value=session_id,
+                httponly=True,
+                max_age=3600,
+                samesite="lax"
+            )
+            # Retorna redirect limpo
+            return response
+        else:
+            # HTML de erro amigável caso o token falhe
+            return HTMLResponse(content="""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Link Expirado</title>
+                <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap" rel="stylesheet">
+                <style>
+                    body { background: #0a0a0c; color: #e2e2e8; font-family: 'Outfit', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+                    .card { background: #131317; border: 1px solid #212128; padding: 40px; border-radius: 20px; text-align: center; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+                    h2 { color: #d11270; margin-bottom: 10px; }
+                    p { color: #8e8e9c; font-size: 0.95rem; line-height: 1.5; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h2>⚠️ Link de Acesso Expirado</h2>
+                    <p>Este link de login de uso único expirou (limite de 10 minutos) ou já foi utilizado. Por favor, envie o comando /login no bot do Telegram para gerar um novo link.</p>
+                </div>
+            </body>
+            </html>
+            """, status_code=400)
+
+    # Fluxo normal: serve a página do dashboard index.html
     index_file = os.path.join(frontend_path, "index.html")
     if os.path.exists(index_file):
         with open(index_file, "r", encoding="utf-8") as f:

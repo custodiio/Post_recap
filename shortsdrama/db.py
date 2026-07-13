@@ -63,6 +63,27 @@ def init_db():
             value TEXT NOT NULL
         )
     ''')
+
+    # Tabela de Modelos de Postagem/Templates
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            youtube_desc TEXT NOT NULL,
+            tiktok_desc TEXT NOT NULL,
+            tags TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Tabela de Tokens temporários de Login
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS login_tokens (
+            token TEXT PRIMARY KEY,
+            email TEXT NOT NULL,
+            expires_at TIMESTAMP NOT NULL
+        )
+    ''')
     
     # Insere configurações padrão se não existirem
     default_settings = {
@@ -71,11 +92,40 @@ def init_db():
         'posts_per_day': '2',
         'scheduled_hours': '12:00,18:00', # Horários base separados por vírgula
         'last_cron_run': '',
-        'youtube_default_privacy': 'private' # private, public, unlisted
+        'youtube_default_privacy': 'private', # private, public, unlisted
+        'yt_title_template': '{title} - Completo'
     }
     
     for key, value in default_settings.items():
         cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', (key, value))
+
+    # Verifica se há algum template. Se não houver, insere os 3 padrão
+    cursor.execute('SELECT COUNT(*) FROM templates')
+    if cursor.fetchone()[0] == 0:
+        default_templates = [
+            (
+                "🎬 Drama Emocionante",
+                "Prepare o coração! Assista a este trecho de {title} ({part_str}).\n\nDeixe seu like e se inscreva no canal para não perder as próximas partes desse drama incrível!\n\n#dramas #shorts #recap #kdrama #cdrama #drama",
+                "😭 Impossível não se emocionar com essa cena! {title} ({part_str}) 🎬🍿 #dramas #shorts #doramas #series #recap #foryou",
+                "dramas, shorts, doramas, recap, novela, cdrama, kdrama"
+            ),
+            (
+                "❤️ Romance e Comédia",
+                "A química perfeita! Acompanhe as trapalhadas românticas de {title} ({part_str}).\n\nDiga nos comentários o que você achou dessa cena! Inscreva-se para apoiar o canal.\n\n#romance #comedia #doramas #dramas #shorts",
+                "Eles dois são muito fofos juntos! 😍🍿 {title} ({part_str}) #doramas #romance #comedia #dramas #series #casal #fyp",
+                "romance, comedia, doramas, dramas, casal, fofocas, shorts"
+            ),
+            (
+                "⚡ Suspense e Ação",
+                "Tensão máxima! O que vai acontecer a seguir em {title} ({part_str})?\n\nInscreva-se no canal e ative o sininho para acompanhar o desfecho desse mistério!\n\n#suspense #acao #shorts #dramas #series",
+                "O clima esquentou aqui! 😱💥 {title} ({part_str}) O que acham que vai acontecer? #dramas #suspense #acao #series #recap #foryou",
+                "suspense, acao, dramas, series, recap, filmes"
+            )
+        ]
+        cursor.executemany('''
+            INSERT INTO templates (name, youtube_desc, tiktok_desc, tags)
+            VALUES (?, ?, ?, ?)
+        ''', default_templates)
         
     conn.commit()
     conn.close()
@@ -183,6 +233,87 @@ def update_setting(key, value):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, value))
+    conn.commit()
+    conn.close()
+
+def create_login_token(email: str, token: str):
+    from datetime import timedelta
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Expira em 10 minutos
+    expires_at = (datetime.now() + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute('''
+        INSERT INTO login_tokens (token, email, expires_at)
+        VALUES (?, ?, ?)
+    ''', (token, email, expires_at))
+    conn.commit()
+    conn.close()
+
+def consume_login_token(token: str) -> Optional[str]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT email, expires_at FROM login_tokens WHERE token = ?', (token,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+        
+    email, expires_at = row[0], row[1]
+    # Apaga para uso único (one-time token)
+    cursor.execute('DELETE FROM login_tokens WHERE token = ?', (token,))
+    conn.commit()
+    conn.close()
+    
+    # Valida expiração
+    exp_dt = datetime.strptime(expires_at, "%Y-%m-%d %H:%M:%S")
+    if datetime.now() > exp_dt:
+        return None
+        
+    return email
+
+def get_all_templates():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM templates ORDER BY name ASC')
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_template(template_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM templates WHERE id = ?', (template_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def save_template(name: str, youtube_desc: str, tiktok_desc: str, tags: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO templates (name, youtube_desc, tiktok_desc, tags)
+        VALUES (?, ?, ?, ?)
+    ''', (name, youtube_desc, tiktok_desc, tags))
+    template_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return template_id
+
+def update_template(template_id: int, name: str, youtube_desc: str, tiktok_desc: str, tags: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE templates 
+        SET name = ?, youtube_desc = ?, tiktok_desc = ?, tags = ?
+        WHERE id = ?
+    ''', (name, youtube_desc, tiktok_desc, tags, template_id))
+    conn.commit()
+    conn.close()
+
+def delete_template(template_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM templates WHERE id = ?', (template_id,))
     conn.commit()
     conn.close()
 
