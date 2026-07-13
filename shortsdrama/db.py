@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from datetime import datetime
+from typing import Optional
 
 # Define o caminho do banco de dados dependendo se está rodando localmente ou na VPS
 if os.path.exists('/home/ubuntu/apps'):
