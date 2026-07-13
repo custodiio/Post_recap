@@ -85,8 +85,9 @@ class TemplateRequest(BaseModel):
     tags: str
 
 class PostPartRequest(BaseModel):
-    platform: str = "tt"   # tt, yt, both, all
-    privacy: str = "SELF_ONLY"  # SELF_ONLY, PUBLIC_TO_EVERYONE, private, public
+    platform: str = "tt"              # tt, yt, both, all
+    tt_privacy: str = "PUBLIC_TO_EVERYONE"  # TikTok: PUBLIC_TO_EVERYONE, SELF_ONLY, FOLLOWER_OF_CREATOR
+    yt_privacy: str = "private"       # YouTube: private, public, unlisted
 
 # Endpoints de Autenticação
 @app.post("/dramas/api/auth/login")
@@ -198,11 +199,11 @@ async def delete_template_endpoint(template_id: int, user: str = Depends(get_cur
 @app.post("/dramas/api/parts/{part_id}/post")
 async def post_part_endpoint(part_id: int, req: PostPartRequest = PostPartRequest(), user: str = Depends(get_current_user)):
     """Dispara a postagem imediata de uma parte específica em background."""
-    asyncio.create_task(run_manual_part_posting(part_id, req.platform, req.privacy))
+    asyncio.create_task(run_manual_part_posting(part_id, req.platform, req.tt_privacy, req.yt_privacy))
     return {"status": "success", "message": "Pipeline de postagem iniciado em background."}
 
-async def run_manual_part_posting(part_id: int, platform: str = "tt", privacy: str = "SELF_ONLY"):
-    """Executa o download, corte e envio da parte na VPS."""
+async def run_manual_part_posting(part_id: int, platform: str = "tt", tt_privacy: str = "PUBLIC_TO_EVERYONE", yt_privacy: str = "private"):
+    """Executa o download, corte e envio da parte na VPS com privacidades independentes por plataforma."""
     conn = db.get_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -266,31 +267,24 @@ async def run_manual_part_posting(part_id: int, platform: str = "tt", privacy: s
             
         meta = templates.format_post_meta(title, part_num)
         
-        # Upload para as plataformas escolhidas pelo usuário no painel
+        # Upload para as plataformas escolhidas, com privacidade independente por plataforma
         tt_ok, tt_id = False, "Pulado"
         yt_ok, yt_id = False, "Pulado"
         
         if platform in ["tt", "both", "all"]:
-            # TikTok: mapeia privacidade legível para constante da API
-            tt_privacy_map = {
-                "public": "PUBLIC_TO_EVERYONE",
-                "private": "SELF_ONLY",
-            }
-            tt_privacy = tt_privacy_map.get(privacy, privacy)  # aceita constante direta também
             tt_ok, tt_id = await uploader.upload_to_tiktok(
                 video_path=tmp_cut,
                 title=meta["tiktok_desc"],
-                privacy_level=tt_privacy
+                privacy_level=tt_privacy   # ex: PUBLIC_TO_EVERYONE ou SELF_ONLY
             )
         
         if platform in ["yt", "both", "all"]:
-            yt_privacy = "public" if privacy in ["public", "PUBLIC_TO_EVERYONE"] else "private"
             yt_ok, yt_id = await uploader.upload_to_youtube(
                 video_path=tmp_cut,
                 title=meta["youtube_title"],
                 description=meta["youtube_desc"],
                 tags=meta["tags"],
-                privacy_status=yt_privacy
+                privacy_status=yt_privacy  # ex: private ou public
             )
         
         any_success = tt_ok or yt_ok

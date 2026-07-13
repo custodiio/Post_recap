@@ -203,12 +203,23 @@
                         </div>
                     </div>
                     <div class="modal-control-group">
-                        <label>Privacidade</label>
+                        <label>🎵 Privacidade TikTok</label>
                         <div class="privacy-selector">
-                            <button onclick="selectPrivacy('private')" id="priv-private" class="privacy-btn active-privacy">
+                            <button onclick="selectPrivacy('tt','public')" id="priv-tt-public" class="privacy-btn">
+                                🌐 Público
+                            </button>
+                            <button onclick="selectPrivacy('tt','private')" id="priv-tt-private" class="privacy-btn">
                                 🔒 Privado
                             </button>
-                            <button onclick="selectPrivacy('public')" id="priv-public" class="privacy-btn">
+                        </div>
+                    </div>
+                    <div class="modal-control-group">
+                        <label>📺 Privacidade YouTube</label>
+                        <div class="privacy-selector">
+                            <button onclick="selectPrivacy('yt','private')" id="priv-yt-private" class="privacy-btn">
+                                🔒 Privado
+                            </button>
+                            <button onclick="selectPrivacy('yt','public')" id="priv-yt-public" class="privacy-btn">
                                 🌐 Público
                             </button>
                         </div>
@@ -227,10 +238,12 @@
     <script>
         const API_URL = "/dramas";
         let currentDramas = [];
+        let savedSettings = {};
         let selectedDramaId = null;
         let selectedPartId = null;
         let selectedPlatform = "tt";
-        let selectedPrivacy = "private";
+        let selectedTtPrivacy = "PUBLIC_TO_EVERYONE"; // padrão: público
+        let selectedYtPrivacy = "private";            // padrão: privado
 
         // Auto-detect sessão
         document.addEventListener("DOMContentLoaded", async () => {
@@ -268,13 +281,28 @@
             try {
                 const res = await fetchAPI("/api/settings");
                 const data = await res.json();
+                savedSettings = data;
                 document.getElementById("toggle-tiktok").checked = data.tiktok_auto_post === "1";
                 document.getElementById("toggle-youtube").checked = data.youtube_auto_post === "1";
                 document.getElementById("posts-per-day").value = data.posts_per_day;
                 document.getElementById("scheduled-hours").value = data.scheduled_hours;
                 document.getElementById("yt-privacy").value = data.youtube_default_privacy;
                 document.getElementById("tt-privacy").value = data.tiktok_default_privacy || "SELF_ONLY";
+
+                // Sincroniza defaults do modal com as configurações salvas
+                selectedTtPrivacy = data.tiktok_default_privacy || "PUBLIC_TO_EVERYONE";
+                selectedYtPrivacy = data.youtube_default_privacy || "private";
+                applyPrivacyUI();
             } catch (e) { console.error("Erro carregando configurações:", e); }
+        }
+
+        function applyPrivacyUI() {
+            // TikTok
+            document.getElementById("priv-tt-public").classList.toggle("active-privacy", selectedTtPrivacy === "PUBLIC_TO_EVERYONE");
+            document.getElementById("priv-tt-private").classList.toggle("active-privacy", selectedTtPrivacy === "SELF_ONLY");
+            // YouTube
+            document.getElementById("priv-yt-private").classList.toggle("active-privacy", selectedYtPrivacy === "private");
+            document.getElementById("priv-yt-public").classList.toggle("active-privacy", selectedYtPrivacy === "public");
         }
 
         async function saveSettings() {
@@ -462,8 +490,15 @@
             }
 
             const platLabels = { tt: "TikTok", yt: "YouTube", both: "TikTok + YouTube", all: "Todas" };
-            const privLabels = { private: "Privado 🔒", public: "Público 🌐" };
-            info.innerHTML = `Pronto para postar: <strong>Parte ${partNum}</strong> em <strong>${platLabels[selectedPlatform]}</strong> como <strong>${privLabels[selectedPrivacy]}</strong>`;
+            const ttLabel = selectedTtPrivacy === "PUBLIC_TO_EVERYONE" ? "Público 🌐" : "Privado 🔒";
+            const ytLabel = selectedYtPrivacy === "public" ? "Público 🌐" : "Privado 🔒";
+
+            let privInfo = "";
+            if (selectedPlatform === "tt")   privInfo = `TikTok: <strong>${ttLabel}</strong>`;
+            else if (selectedPlatform === "yt") privInfo = `YouTube: <strong>${ytLabel}</strong>`;
+            else privInfo = `TikTok: <strong>${ttLabel}</strong> | YouTube: <strong>${ytLabel}</strong>`;
+
+            info.innerHTML = `Parte <strong>${partNum}</strong> → <strong>${platLabels[selectedPlatform]}</strong> &nbsp;│&nbsp; ${privInfo}`;
             btn.disabled = false;
         }
 
@@ -490,11 +525,14 @@
             }
         }
 
-        // Seletores de privacidade
-        function selectPrivacy(privacy) {
-            selectedPrivacy = privacy;
-            document.querySelectorAll('.privacy-btn').forEach(b => b.classList.remove('active-privacy'));
-            document.getElementById(`priv-${privacy}`).classList.add('active-privacy');
+        // Seletor de privacidade independente por plataforma
+        function selectPrivacy(platform, value) {
+            if (platform === 'tt') {
+                selectedTtPrivacy = value === 'public' ? 'PUBLIC_TO_EVERYONE' : 'SELF_ONLY';
+            } else {
+                selectedYtPrivacy = value; // 'public' ou 'private'
+            }
+            applyPrivacyUI();
             if (selectedPartId) {
                 const drama = currentDramas.find(d => d.id === selectedDramaId);
                 const part = drama?.parts?.find(p => p.id === selectedPartId);
@@ -509,16 +547,13 @@
             btn.textContent = "⏳ Enviando...";
 
             try {
-                // Mapeia privacidade para formato correto por plataforma
-                const ttPrivacyMap = { private: "SELF_ONLY", public: "PUBLIC_TO_EVERYONE" };
-                const ttPrivacy = ttPrivacyMap[selectedPrivacy] || selectedPrivacy;
-
                 const res = await fetchAPI(`/api/parts/${selectedPartId}/post`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         platform: selectedPlatform,
-                        privacy: ttPrivacy
+                        tt_privacy: selectedTtPrivacy,  // ex: PUBLIC_TO_EVERYONE
+                        yt_privacy: selectedYtPrivacy   // ex: private
                     })
                 });
 
