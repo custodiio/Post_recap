@@ -292,7 +292,7 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, plat
             title=title,
             msg_id=msg_id,
             chat_id=source_chat,
-            duration_sec=int(total_duration),
+            duration=int(total_duration),
             file_size=os.path.getsize(tmp_orig),
             caption=caption,
             file_name=os.path.basename(tmp_orig)
