@@ -70,12 +70,19 @@ def init_db():
         CREATE TABLE IF NOT EXISTS templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
+            youtube_title TEXT NOT NULL DEFAULT '{title} - Completo',
             youtube_desc TEXT NOT NULL,
             tiktok_desc TEXT NOT NULL,
             tags TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Migração: Garante que a coluna youtube_title existe
+    try:
+        cursor.execute("ALTER TABLE templates ADD COLUMN youtube_title TEXT NOT NULL DEFAULT '{title} - Completo'")
+    except sqlite3.OperationalError:
+        pass # Coluna já existe
 
     # Tabela de Tokens temporários de Login
     cursor.execute('''
@@ -106,26 +113,29 @@ def init_db():
         default_templates = [
             (
                 "🎬 Drama Emocionante",
+                "{title} - Completo",
                 "Prepare o coração! Assista a este trecho de {title} ({part_str}).\n\nDeixe seu like e se inscreva no canal para não perder as próximas partes desse drama incrível!\n\n#dramas #shorts #recap #kdrama #cdrama #drama",
                 "😭 Impossível não se emocionar com essa cena! {title} ({part_str}) 🎬🍿 #dramas #shorts #doramas #series #recap #foryou",
                 "dramas, shorts, doramas, recap, novela, cdrama, kdrama"
             ),
             (
                 "❤️ Romance e Comédia",
+                "{title} - Romance e Comédia",
                 "A química perfeita! Acompanhe as trapalhadas românticas de {title} ({part_str}).\n\nDiga nos comentários o que você achou dessa cena! Inscreva-se para apoiar o canal.\n\n#romance #comedia #doramas #dramas #shorts",
                 "Eles dois são muito fofos juntos! 😍🍿 {title} ({part_str}) #doramas #romance #comedia #dramas #series #casal #fyp",
                 "romance, comedia, doramas, dramas, casal, fofocas, shorts"
             ),
             (
                 "⚡ Suspense e Ação",
+                "{title} - Tensão Máxima",
                 "Tensão máxima! O que vai acontecer a seguir em {title} ({part_str})?\n\nInscreva-se no canal e ative o sininho para acompanhar o desfecho desse mistério!\n\n#suspense #acao #shorts #dramas #series",
                 "O clima esquentou aqui! 😱💥 {title} ({part_str}) O que acham que vai acontecer? #dramas #suspense #acao #series #recap #foryou",
                 "suspense, acao, dramas, series, recap, filmes"
             )
         ]
         cursor.executemany('''
-            INSERT INTO templates (name, youtube_desc, tiktok_desc, tags)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO templates (name, youtube_title, youtube_desc, tiktok_desc, tags)
+            VALUES (?, ?, ?, ?, ?)
         ''', default_templates)
         
     conn.commit()
@@ -288,26 +298,26 @@ def get_template(template_id: int):
     conn.close()
     return dict(row) if row else None
 
-def save_template(name: str, youtube_desc: str, tiktok_desc: str, tags: str):
+def save_template(name: str, youtube_title: str, youtube_desc: str, tiktok_desc: str, tags: str):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO templates (name, youtube_desc, tiktok_desc, tags)
-        VALUES (?, ?, ?, ?)
-    ''', (name, youtube_desc, tiktok_desc, tags))
+        INSERT INTO templates (name, youtube_title, youtube_desc, tiktok_desc, tags)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (name, youtube_title, youtube_desc, tiktok_desc, tags))
     template_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return template_id
 
-def update_template(template_id: int, name: str, youtube_desc: str, tiktok_desc: str, tags: str):
+def update_template(template_id: int, name: str, youtube_title: str, youtube_desc: str, tiktok_desc: str, tags: str):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE templates 
-        SET name = ?, youtube_desc = ?, tiktok_desc = ?, tags = ?
+        SET name = ?, youtube_title = ?, youtube_desc = ?, tiktok_desc = ?, tags = ?
         WHERE id = ?
-    ''', (name, youtube_desc, tiktok_desc, tags, template_id))
+    ''', (name, youtube_title, youtube_desc, tiktok_desc, tags, template_id))
     conn.commit()
     conn.close()
 

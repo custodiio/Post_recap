@@ -78,6 +78,7 @@ class SettingsUpdate(BaseModel):
 
 class TemplateRequest(BaseModel):
     name: str
+    youtube_title: str
     youtube_desc: str
     tiktok_desc: str
     tags: str
@@ -174,12 +175,12 @@ async def get_templates(user: str = Depends(get_current_user)):
 
 @app.post("/api/templates")
 async def create_template(req: TemplateRequest, user: str = Depends(get_current_user)):
-    t_id = db.save_template(req.name, req.youtube_desc, req.tiktok_desc, req.tags)
+    t_id = db.save_template(req.name, req.youtube_title, req.youtube_desc, req.tiktok_desc, req.tags)
     return {"status": "success", "id": t_id}
 
 @app.put("/api/templates/{template_id}")
 async def update_template_endpoint(template_id: int, req: TemplateRequest, user: str = Depends(get_current_user)):
-    db.update_template(template_id, req.name, req.youtube_desc, req.tiktok_desc, req.tags)
+    db.update_template(template_id, req.name, req.youtube_title, req.youtube_desc, req.tiktok_desc, req.tags)
     return {"status": "success"}
 
 @app.delete("/api/templates/{template_id}")

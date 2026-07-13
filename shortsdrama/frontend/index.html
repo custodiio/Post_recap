@@ -138,6 +138,10 @@
                             <input type="text" id="template-name" required>
                         </div>
                         <div class="form-group">
+                            <label for="template-yt-title">Título YouTube (Use {title} para substituição dinâmica)</label>
+                            <input type="text" id="template-yt-title" placeholder="{title} - Completo" required>
+                        </div>
+                        <div class="form-group">
                             <label for="template-yt-desc">Descrição YouTube (Use {title} e {part_str} para substituição dinâmica)</label>
                             <textarea id="template-yt-desc" rows="5" style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); color: var(--text-color); padding: 12px; border-radius: 10px; font-family: var(--font-stack);" required></textarea>
                         </div>
@@ -431,6 +435,10 @@
                             </div>
                             <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); padding: 15px; border-radius: 12px; display: flex; flex-direction: column; gap: 15px; text-align: left; font-size: 0.9rem;">
                                 <div>
+                                    <strong style="color: var(--youtube-color);">📺 YouTube Título:</strong>
+                                    <pre style="white-space: pre-wrap; font-family: inherit; margin: 5px 0 0 0; color: var(--text-muted); font-size: 0.85rem; background: var(--bg-dark); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">${t.youtube_title || '{title} - Completo'}</pre>
+                                </div>
+                                <div>
                                     <strong style="color: var(--youtube-color);">📺 YouTube Descrição:</strong>
                                     <pre style="white-space: pre-wrap; font-family: inherit; margin: 5px 0 0 0; color: var(--text-muted); font-size: 0.85rem; background: var(--bg-dark); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">${t.youtube_desc}</pre>
                                 </div>
@@ -456,6 +464,7 @@
             document.getElementById("template-form-title").textContent = "➕ Criar Novo Modelo";
             document.getElementById("template-id-field").value = "";
             document.getElementById("template-name").value = "";
+            document.getElementById("template-yt-title").value = "{title} - Completo";
             document.getElementById("template-yt-desc").value = "";
             document.getElementById("template-tt-desc").value = "";
             document.getElementById("template-tags").value = "";
@@ -471,6 +480,7 @@
             document.getElementById("template-form-title").textContent = "✏️ Editar Modelo de Postagem";
             document.getElementById("template-id-field").value = template.id;
             document.getElementById("template-name").value = template.name;
+            document.getElementById("template-yt-title").value = template.youtube_title || "{title} - Completo";
             document.getElementById("template-yt-desc").value = template.youtube_desc;
             document.getElementById("template-tt-desc").value = template.tiktok_desc;
             document.getElementById("template-tags").value = template.tags;
@@ -486,16 +496,17 @@
         async function saveTemplate() {
             const id = document.getElementById("template-id-field").value;
             const name = document.getElementById("template-name").value.trim();
+            const ytTitle = document.getElementById("template-yt-title").value.trim();
             const ytDesc = document.getElementById("template-yt-desc").value.trim();
             const ttDesc = document.getElementById("template-tt-desc").value.trim();
             const tags = document.getElementById("template-tags").value.trim();
 
-            if (!name || !ytDesc || !ttDesc) {
+            if (!name || !ytTitle || !ytDesc || !ttDesc) {
                 alert("Por favor, preencha todos os campos obrigatórios.");
                 return;
             }
 
-            const body = { name, youtube_desc: ytDesc, tiktok_desc: ttDesc, tags };
+            const body = { name, youtube_title: ytTitle, youtube_desc: ytDesc, tiktok_desc: ttDesc, tags };
             const method = id ? "PUT" : "POST";
             const endpoint = id ? `/api/templates/${id}` : "/api/templates";
 

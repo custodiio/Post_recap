@@ -35,48 +35,54 @@ def clean_tags_and_title(raw_title: str) -> str:
 
 def format_post_meta(title: str, part_number: int) -> dict:
     """
-    Retorna os metadados formatados para postagem selecionando um template aleatório
-    dentre as predefinições salvas no banco de dados SQLite.
+    Retorna os metadados formatados para postagem rotacionando (intercalando) 
+    sequencialmente pelos modelos de postagem cadastrados na tabela 'templates'.
     """
     import db  # Importação atrasada para evitar importação circular
     
-    # 1. Carrega os templates de descrição do YouTube do banco
-    yt_desc_raw = db.get_setting("yt_desc_template", "")
-    if yt_desc_raw and yt_desc_raw.strip():
-        # Divide pelo separador '---'
-        yt_templates = [t.strip() for t in yt_desc_raw.split("---") if t.strip()]
-    else:
-        yt_templates = DEFAULT_YT_DESC_TEMPLATES
+    # 1. Carrega todos os modelos da base
+    db_templates = db.get_all_templates()
+    
+    if db_templates:
+        # Pega o ID do último modelo usado para intercalar
+        last_id_str = db.get_setting("last_used_template_id", "")
         
-    # 2. Carrega os templates do TikTok do banco
-    tt_desc_raw = db.get_setting("tt_desc_template", "")
-    if tt_desc_raw and tt_desc_raw.strip():
-        tt_templates = [t.strip() for t in tt_desc_raw.split("---") if t.strip()]
-    else:
-        tt_templates = DEFAULT_TT_DESC_TEMPLATES
+        # Encontra o próximo índice da sequência
+        chosen_index = 0
+        if last_id_str:
+            try:
+                last_id = int(last_id_str)
+                for idx, t in enumerate(db_templates):
+                    if t["id"] == last_id:
+                        chosen_index = (idx + 1) % len(db_templates)
+                        break
+            except ValueError:
+                pass
+                
+        model = db_templates[chosen_index]
         
-    # 3. Carrega as tags do banco
-    tags_raw = db.get_setting("default_tags", "")
-    if tags_raw and tags_raw.strip():
-        # Divide por quebra de linha ou vírgula
-        if "---" in tags_raw:
-             tags_groups = [g.strip() for g in tags_raw.split("---") if g.strip()]
-             chosen_tags_str = random.choice(tags_groups)
-        else:
-             chosen_tags_str = tags_raw
-        tags_list = [tag.strip() for tag in chosen_tags_str.split(",") if tag.strip()]
+        # Grava o modelo escolhido como último usado
+        db.update_setting("last_used_template_id", str(model["id"]))
+        
+        yt_title_pattern = model.get("youtube_title", "{title} - Completo")
+        chosen_yt_desc_template = model.get("youtube_desc", "")
+        chosen_tt_desc_template = model.get("tiktok_desc", "")
+        tags_raw = model.get("tags", "")
+        tags_list = [tag.strip() for tag in tags_raw.split(",") if tag.strip()]
     else:
-        chosen_tags_str = random.choice(DEFAULT_TAGS_TEMPLATES)
+        # Fallback para as constantes estáticas com rotação baseada em um contador na settings
+        fallback_counter = int(db.get_setting("fallback_template_counter", "0"))
+        db.update_setting("fallback_template_counter", str(fallback_counter + 1))
+        
+        yt_title_pattern = DEFAULT_YT_TITLE_TEMPLATE
+        chosen_yt_desc_template = DEFAULT_YT_DESC_TEMPLATES[fallback_counter % len(DEFAULT_YT_DESC_TEMPLATES)]
+        chosen_tt_desc_template = DEFAULT_TT_DESC_TEMPLATES[fallback_counter % len(DEFAULT_TT_DESC_TEMPLATES)]
+        chosen_tags_str = DEFAULT_TAGS_TEMPLATES[fallback_counter % len(DEFAULT_TAGS_TEMPLATES)]
         tags_list = [tag.strip() for tag in chosen_tags_str.split(",") if tag.strip()]
-
-    # 4. Escolhe os templates de forma aleatória para intercalação
-    chosen_yt_desc_template = random.choice(yt_templates)
-    chosen_tt_desc_template = random.choice(tt_templates)
     
     part_str = f"Parte {part_number}"
     
-    # 5. Formata os títulos
-    yt_title_pattern = db.get_setting("yt_title_template", DEFAULT_YT_TITLE_TEMPLATE)
+    # 2. Formata os títulos de forma dinâmica
     yt_title = yt_title_pattern.format(title=title, part_str="Completo")
     if len(yt_title) > 95:
          yt_title = yt_title[:92] + "..."
@@ -85,11 +91,11 @@ def format_post_meta(title: str, part_number: int) -> dict:
     if len(tt_title) > 95:
          tt_title = tt_title[:92] + "..."
          
-    # 6. Formata descrições
+    # 3. Formata descrições
     yt_desc = chosen_yt_desc_template.format(title=title, part_str="Completo")
     tt_desc = chosen_tt_desc_template.format(title=title, part_str=part_str)
     
-    logger.info(f"[TEMPLATES] Metadados gerados por intercalação aleatória de templates.")
+    logger.info(f"[TEMPLATES] Metadados gerados por rotação sequencial de templates (ID: {model['id'] if db_templates else 'fallback'}).")
     
     return {
         "title": tt_title,
