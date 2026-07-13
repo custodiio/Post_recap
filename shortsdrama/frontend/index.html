@@ -376,8 +376,9 @@
 
                     return `
                         <div class="drama-grid-card ${cardGlow}" onclick="openDramaModal(${d.id})" title="Clique para gerenciar partes">
-                            <div class="drama-card-thumb">
-                                <div class="drama-thumb-placeholder">🎬</div>
+                            <div class="drama-card-thumb" style="position: relative; overflow: hidden; background: #000; width: 100%; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center;">
+                                <img src="/dramas/api/dramas/${d.id}/cover" style="width: 100%; height: 100%; object-fit: cover; z-index: 1;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                                <div class="drama-thumb-placeholder" style="font-size: 2.8rem; opacity: 0.5; z-index: 0; display: none;">🎬</div>
                                 ${statusBadge}
                             </div>
                             <div class="drama-card-body">
@@ -483,12 +484,6 @@
             const info = document.getElementById("modal-post-target");
             const btn = document.getElementById("modal-post-btn");
 
-            if (!partNum || !selectedPartId) {
-                info.textContent = "Selecione uma parte acima para postar.";
-                btn.disabled = true;
-                return;
-            }
-
             const platLabels = { tt: "TikTok", yt: "YouTube", both: "TikTok + YouTube", all: "Todas" };
             const ttLabel = selectedTtPrivacy === "PUBLIC_TO_EVERYONE" ? "Público 🌐" : "Privado 🔒";
             const ytLabel = selectedYtPrivacy === "public" ? "Público 🌐" : "Privado 🔒";
@@ -496,9 +491,19 @@
             let privInfo = "";
             if (selectedPlatform === "tt")   privInfo = `TikTok: <strong>${ttLabel}</strong>`;
             else if (selectedPlatform === "yt") privInfo = `YouTube: <strong>${ytLabel}</strong>`;
-            else privInfo = `TikTok: <strong>${ttLabel}</strong> | YouTube: <strong>${ytLabel}</strong>`;
+            else privInfo = `TikTok: <strong>${ttLabel}</strong> │ YouTube: <strong>${ytLabel}</strong>`;
 
-            info.innerHTML = `Parte <strong>${partNum}</strong> → <strong>${platLabels[selectedPlatform]}</strong> &nbsp;│&nbsp; ${privInfo}`;
+            if (!partNum || !selectedPartId) {
+                const drama = currentDramas.find(d => d.id === selectedDramaId);
+                const nextPart = (drama && drama.parts) ? (drama.parts.length + 1) : 2;
+                info.innerHTML = `Postar Próxima Parte: <strong>Parte ${nextPart}</strong> → <strong>${platLabels[selectedPlatform]}</strong> &nbsp;│&nbsp; ${privInfo}`;
+                btn.textContent = `🚀 Postar Parte ${nextPart}`;
+                btn.disabled = false;
+                return;
+            }
+
+            info.innerHTML = `Re-postar: <strong>Parte ${partNum}</strong> → <strong>${platLabels[selectedPlatform]}</strong> &nbsp;│&nbsp; ${privInfo}`;
+            btn.textContent = `🚀 Postar Parte ${partNum} Selecionada`;
             btn.disabled = false;
         }
 
@@ -518,11 +523,10 @@
             selectedPlatform = platform;
             document.querySelectorAll('.platform-btn').forEach(b => b.classList.remove('active-platform'));
             document.getElementById(`plat-${platform}`).classList.add('active-platform');
-            if (selectedPartId) {
-                const drama = currentDramas.find(d => d.id === selectedDramaId);
-                const part = drama?.parts?.find(p => p.id === selectedPartId);
-                if (part) updateModalPostInfo(part.part_number);
-            }
+            
+            const drama = currentDramas.find(d => d.id === selectedDramaId);
+            const part = drama?.parts?.find(p => p.id === selectedPartId);
+            updateModalPostInfo(part ? part.part_number : null);
         }
 
         // Seletor de privacidade independente por plataforma
@@ -533,29 +537,43 @@
                 selectedYtPrivacy = value; // 'public' ou 'private'
             }
             applyPrivacyUI();
-            if (selectedPartId) {
-                const drama = currentDramas.find(d => d.id === selectedDramaId);
-                const part = drama?.parts?.find(p => p.id === selectedPartId);
-                if (part) updateModalPostInfo(part.part_number);
-            }
+            
+            const drama = currentDramas.find(d => d.id === selectedDramaId);
+            const part = drama?.parts?.find(p => p.id === selectedPartId);
+            updateModalPostInfo(part ? part.part_number : null);
         }
 
         async function postSelectedPart() {
-            if (!selectedPartId) return;
             const btn = document.getElementById("modal-post-btn");
             btn.disabled = true;
+            const originalText = btn.textContent;
             btn.textContent = "⏳ Enviando...";
 
             try {
-                const res = await fetchAPI(`/api/parts/${selectedPartId}/post`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        platform: selectedPlatform,
-                        tt_privacy: selectedTtPrivacy,  // ex: PUBLIC_TO_EVERYONE
-                        yt_privacy: selectedYtPrivacy   // ex: private
-                    })
-                });
+                let res;
+                if (selectedPartId) {
+                    // Postar parte existente (ex: se falhou)
+                    res = await fetchAPI(`/api/parts/${selectedPartId}/post`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            platform: selectedPlatform,
+                            tt_privacy: selectedTtPrivacy,
+                            yt_privacy: selectedYtPrivacy
+                        })
+                    });
+                } else {
+                    // Criar e postar a próxima parte do drama
+                    res = await fetchAPI(`/api/dramas/${selectedDramaId}/post-next-part`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            platform: selectedPlatform,
+                            tt_privacy: selectedTtPrivacy,
+                            yt_privacy: selectedYtPrivacy
+                        })
+                    });
+                }
 
                 if (res.ok) {
                     alert("✅ Pipeline de postagem iniciado! O processo roda em background. Atualize a lista para acompanhar.");
@@ -569,7 +587,7 @@
                 alert("Erro ao conectar com a API.");
             } finally {
                 btn.disabled = false;
-                btn.textContent = "🚀 Postar Parte Selecionada";
+                btn.textContent = originalText;
             }
         }
 

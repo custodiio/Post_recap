@@ -196,6 +196,70 @@ async def delete_template_endpoint(template_id: int, user: str = Depends(get_cur
     db.delete_template(template_id)
     return {"status": "success"}
 
+@app.get("/dramas/api/dramas/{drama_id}/cover")
+async def get_drama_cover(drama_id: int):
+    """Serve a imagem de capa do drama."""
+    drama = db.get_drama(drama_id)
+    if not drama:
+        raise HTTPException(status_code=404, detail="Drama não encontrado")
+    cover_path = drama.get("cover_path")
+    if cover_path and os.path.exists(cover_path):
+        from fastapi.responses import FileResponse
+        return FileResponse(cover_path, media_type="image/jpeg")
+    # Fallback: tenta encontrar covers/drama_{id}.jpg
+    fallback = os.path.join(current_dir, "covers", f"drama_{drama_id}.jpg")
+    if os.path.exists(fallback):
+        from fastapi.responses import FileResponse
+        return FileResponse(fallback, media_type="image/jpeg")
+    raise HTTPException(status_code=404, detail="Capa não disponível")
+
+@app.post("/dramas/api/dramas/{drama_id}/post-next-part")
+async def post_next_part_endpoint(drama_id: int, req: PostPartRequest = PostPartRequest(), user: str = Depends(get_current_user)):
+    """Cria a próxima parte no banco e dispara o pipeline de postagem."""
+    drama = db.get_drama(drama_id)
+    if not drama:
+        raise HTTPException(status_code=404, detail="Drama não encontrado")
+
+    # Descobre qual é a próxima parte
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT MAX(part_number) FROM drama_parts WHERE drama_id = ?", (drama_id,))
+    row = cursor.fetchone()
+    conn.close()
+    last_part_num = row[0] if row and row[0] else 0
+    next_part_num = last_part_num + 1
+
+    # Calcula o plano de partes a partir da duração salva no banco
+    total_duration = float(drama.get("duration_sec") or drama.get("duration") or 0)
+    if total_duration <= 0:
+        raise HTTPException(status_code=400, detail="Duração do drama não disponível")
+
+    parts_plan = ffmpeg_handler.calculate_parts(total_duration)
+    if next_part_num > len(parts_plan):
+        raise HTTPException(status_code=400, detail=f"Todas as {len(parts_plan)} partes já foram cadastradas")
+
+    p = parts_plan[next_part_num - 1]
+
+    # Cria o registro da nova parte no banco
+    new_part_id = db.save_part(
+        drama_id=drama_id,
+        part_number=next_part_num,
+        start_time=p["start_time"],
+        end_time=p["end_time"],
+        duration=p["duration"],
+        status="pending"
+    )
+
+    # Dispara o pipeline de postagem em background
+    asyncio.create_task(run_manual_part_posting(new_part_id, req.platform, req.tt_privacy, req.yt_privacy))
+    return {
+        "status": "success",
+        "part_id": new_part_id,
+        "part_number": next_part_num,
+        "message": f"Parte {next_part_num} criada e pipeline de postagem iniciado."
+    }
+
+
 @app.post("/dramas/api/parts/{part_id}/post")
 async def post_part_endpoint(part_id: int, req: PostPartRequest = PostPartRequest(), user: str = Depends(get_current_user)):
     """Dispara a postagem imediata de uma parte específica em background."""

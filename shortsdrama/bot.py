@@ -288,6 +288,8 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, plat
             return
             
         # Salva o drama no banco
+        covers_dir = os.path.join(current_dir, "covers")
+        os.makedirs(covers_dir, exist_ok=True)
         drama_id = db.save_drama(
             title=title,
             msg_id=msg_id,
@@ -297,6 +299,18 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, plat
             caption=caption,
             file_name=os.path.basename(tmp_orig)
         )
+
+        # Persiste a capa final no disco de forma permanente
+        permanent_cover = os.path.join(covers_dir, f"drama_{drama_id}.jpg")
+        if cover_ready and os.path.exists(tmp_final_cover):
+            import shutil
+            shutil.copy2(tmp_final_cover, permanent_cover)
+            db.update_drama_cover(drama_id, permanent_cover)
+        else:
+            # Tenta extrair thumbnail do vídeo como fallback
+            thumb_ok = await ffmpeg_handler.extract_thumbnail(tmp_orig, permanent_cover, time_sec=10.0)
+            if thumb_ok:
+                db.update_drama_cover(drama_id, permanent_cover)
         
         # Salva APENAS a Parte 1 — as demais partes são postadas manualmente pelo painel web.
         # Não pré-criamos as partes 2+ para evitar que o scheduler automático as poste
@@ -387,12 +401,13 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, plat
         await status_msg.edit_text(f"❌ Erro crítico no pipeline: {e}")
         
     finally:
-        # Garante a remoção dos arquivos locais do disco
+        # Garante a remoção dos arquivos temporários do disco
         if os.path.exists(tmp_orig): os.remove(tmp_orig)
         if os.path.exists(tmp_cut): os.remove(tmp_cut)
         if os.path.exists(tmp_orig_cover):
             try: os.remove(tmp_orig_cover)
             except: pass
+        # NÃO remove tmp_final_cover — foi copiado para covers/ (ou ignorado se já lá está)
         if os.path.exists(tmp_final_cover):
             try: os.remove(tmp_final_cover)
             except: pass
