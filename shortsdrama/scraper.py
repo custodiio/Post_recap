@@ -139,6 +139,40 @@ async def extract_post_meta_from_telegram(
         logger.error(f"[SCRAPER] Erro ao extrair metadados do Telegram: {e}")
         return "Drama Sem Título", ""
 
+async def download_telegram_cover(
+    client: TelegramClient,
+    chat_id: str,
+    video_message_id: int,
+    output_path: str,
+    lookup_window: int = 10
+) -> bool:
+    """
+    Busca nas mensagens anteriores ao vídeo por uma foto (capa).
+    Se encontrada, baixa e salva no output_path. Retorna True se tiver sucesso.
+    """
+    try:
+        if isinstance(chat_id, str) and (chat_id.startswith('-100') or chat_id.isdigit()):
+            chat = int(chat_id)
+        else:
+            chat = chat_id
+
+        messages_above = []
+        async for msg in client.iter_messages(chat, limit=lookup_window, max_id=video_message_id):
+            messages_above.append(msg)
+
+        # Procura por fotos
+        for msg in messages_above:
+            if msg.photo:
+                logger.info(f"[SCRAPER] Capa encontrada na msg_id={msg.id}. Fazendo download...")
+                path = await client.download_media(msg.photo, file=output_path)
+                if path:
+                    logger.info(f"[SCRAPER] Download da capa concluído: {path}")
+                    return True
+        return False
+    except Exception as e:
+        logger.error(f"[SCRAPER] Erro ao buscar/baixar capa: {e}")
+        return False
+
 async def scrape_douyin_video(url: str, output_path: str) -> Tuple[bool, str]:
     """
     Placeholder robusto para scraper do Douyin.

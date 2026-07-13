@@ -25,6 +25,7 @@ import scraper
 import ffmpeg_handler
 import uploader
 import templates
+import cover_processor
 
 # Configura logs
 logging.basicConfig(
@@ -203,6 +204,8 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, priv
     
     tmp_orig = os.path.join(current_dir, "temp", f"orig_{msg_id}.mp4")
     tmp_cut = os.path.join(current_dir, "temp", f"cut_{msg_id}.mp4")
+    tmp_orig_cover = os.path.join(current_dir, "temp", f"cover_orig_{msg_id}.jpg")
+    tmp_final_cover = os.path.join(current_dir, "temp", f"cover_final_{msg_id}.jpg")
     os.makedirs(os.path.dirname(tmp_orig), exist_ok=True)
     
     client = None
@@ -225,9 +228,16 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, priv
             await status_msg.edit_text(f"❌ Erro ao baixar vídeo: {path}")
             return
             
-        # Fase 2: Scrape da Sinopse / Título
-        await status_msg.edit_text("🔍 Varrendo metadados do post no canal...")
+        # Fase 2: Scrape da Sinopse / Título e Capa
+        await status_msg.edit_text("🔍 Varrendo metadados e capa do post no canal...")
         title, caption = await scraper.extract_post_meta_from_telegram(client, source_chat, msg_id)
+        
+        # Faz download da capa (foto anterior ao vídeo no Telegram)
+        has_cover = await scraper.download_telegram_cover(client, source_chat, msg_id, tmp_orig_cover)
+        cover_ready = False
+        if has_cover:
+            await status_msg.edit_text("🎨 Editando capa 16:9 (3 painéis)...")
+            cover_ready = cover_processor.create_16_9_cover(tmp_orig_cover, tmp_final_cover)
         
         # Fase 3: Fatiamento em 6-8 minutos
         total_duration = await ffmpeg_handler.get_video_duration(tmp_orig)
@@ -270,14 +280,15 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, priv
         # Gera metadados de postagem formatados pelo template
         meta = templates.format_post_meta(title, 1)
         
-        # Fase 4: Postagem no YouTube (Vídeo Completo)
+        # Fase 4: Postagem no YouTube (Vídeo Completo com Capa)
         await status_msg.edit_text("📤 Enviando Vídeo Completo para o YouTube...")
         yt_ok, yt_id = await uploader.upload_to_youtube(
             video_path=tmp_orig,
             title=meta["youtube_title"],
             description=meta["youtube_desc"],
             tags=meta["tags"],
-            privacy_status=privacy
+            privacy_status=privacy,
+            thumbnail_path=tmp_final_cover if cover_ready else None
         )
         
         # Fase 5: Postagem no TikTok (Parte 1 Fatiada)
@@ -306,6 +317,12 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, priv
         # Garante a remoção dos arquivos locais do disco
         if os.path.exists(tmp_orig): os.remove(tmp_orig)
         if os.path.exists(tmp_cut): os.remove(tmp_cut)
+        if os.path.exists(tmp_orig_cover):
+            try: os.remove(tmp_orig_cover)
+            except: pass
+        if os.path.exists(tmp_final_cover):
+            try: os.remove(tmp_final_cover)
+            except: pass
         if client: await client.disconnect()
 
 async def _show_pending_parts(update: Update, context: ContextTypes.DEFAULT_TYPE, edit: bool = False):

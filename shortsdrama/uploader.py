@@ -75,27 +75,27 @@ async def upload_to_youtube(
     title: str,
     description: str,
     tags: list,
-    privacy_status: str = "private" # private, public, unlisted
+    privacy_status: str = "private", # private, public, unlisted
+    thumbnail_path: Optional[str] = None
 ) -> Tuple[bool, str]:
     """
     Realiza o upload de um vídeo para o YouTube usando as credenciais do e-mail allessandrocustodio.alves@gmail.com.
     """
-    logger.info(f"[UPLOADER] Iniciando upload para YouTube: {video_path} | Privacidade: {privacy_status}")
+    logger.info(f"[UPLOADER] Iniciando upload para YouTube: {video_path} | Privacidade: {privacy_status} | Capa: {thumbnail_path}")
     
     # Garante a injeção do e-mail correto antes do load
     os.environ["YOUTUBE_USER_EMAIL"] = "allessandrocustodio.alves@gmail.com"
     
     try:
-        # A função original de upload_video do youtube_uploader é síncrona
+        # A função original de upload_video_to_youtube do youtube_uploader é síncrona
         def run_upload():
-            youtube = youtube_uploader.get_youtube_service()
-            # Mapeia tags para string separada por vírgulas ou lista
-            video_id = youtube_uploader.upload_video(
+            video_id, video_url = youtube_uploader.upload_video_to_youtube(
                 video_path=video_path,
                 title=title,
                 description=description,
                 tags=tags,
-                privacy_status=privacy_status.lower()
+                privacy_status=privacy_status.lower(),
+                thumbnail_path=thumbnail_path
             )
             return video_id
             
