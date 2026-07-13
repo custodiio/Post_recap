@@ -4,7 +4,8 @@ import asyncio
 import logging
 from typing import Optional, Tuple
 from telethon import TelegramClient
-from telethon.tl.types import Message, MessageMediaDocument
+from telethon import functions, types
+from telethon.tl.types import Message, MessageMediaDocument, InputDocumentFileLocation
 from rapidfuzz import fuzz
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,10 @@ logger = logging.getLogger(__name__)
 API_ID = int(os.getenv("TELEGRAM_API_ID", "25657270"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "f2d5b9d5c89471989432ef1c2ee22993")
 SESSION_NAME = os.getenv("TELEGRAM_SESSION_NAME", "shortsdrama_agent")
+
+# Configurações de Download Paralelo Otimizado (Estilo DailymotionAgent)
+FAST_DOWNLOAD_CONNECTIONS = 25
+FAST_CHUNK_SIZE = 512 * 1024 # 512 KB
 
 async def get_telegram_client() -> TelegramClient:
     """Retorna um cliente Telethon autenticado."""
@@ -34,9 +39,10 @@ async def download_telegram_video(
     progress_callback = None
 ) -> Tuple[bool, str]:
     """
-    Baixa um arquivo de vídeo do Telegram baseado no chat e ID da mensagem.
+    Baixa um arquivo de vídeo do Telegram de forma paralela (25 conexões assíncronas)
+    para velocidade máxima absoluta e resiliência a timeouts.
     """
-    logger.info(f"[SCRAPER] Buscando mensagem {message_id} no chat {chat_id}")
+    logger.info(f"[SCRAPER] Buscando mensagem {message_id} no chat {chat_id} para download paralelo")
     
     try:
         # Resolve o chat ID se for numérico
@@ -50,27 +56,111 @@ async def download_telegram_video(
             return False, "Mensagem não contém um arquivo de vídeo válido."
 
         doc = message.media.document
-        logger.info(f"[SCRAPER] Iniciando download do vídeo: {doc.size / (1024*1024):.2f} MB")
+        total_size = doc.size
+        logger.info(f"[SCRAPER] Iniciando Download Paralelo: {total_size / (1024*1024):.2f} MB")
 
-        # Callback de progresso para notificação
-        async def download_progress(received, total):
-            if progress_callback:
-                percent = (received / total) * 100
-                await progress_callback(f"📥 Baixando vídeo: {percent:.1f}% concluído...")
+        # Pre-aloca o arquivo no disco
+        with open(output_path, "wb") as f:
+            f.truncate(total_size)
 
-        path = await client.download_media(
-            message,
-            file=output_path,
-            progress_callback=download_progress
-        )
-        
-        if path:
-            logger.info(f"[SCRAPER] Download concluído com sucesso: {path}")
-            return True, path
-        return False, "Download falhou por motivo desconhecido."
-        
+        # Prepara escrita concorrente compatível com Windows e Linux
+        HAS_PWRITE = hasattr(os, "pwrite")
+        fd = None
+        file_obj = None
+        file_lock = asyncio.Lock()
+
+        if HAS_PWRITE:
+            fd = os.open(output_path, os.O_WRONLY)
+        else:
+            file_obj = open(output_path, "r+b")
+
+        try:
+            semaphore = asyncio.Semaphore(FAST_DOWNLOAD_CONNECTIONS)
+            downloaded = 0
+            last_reported_pct = -1
+            
+            # Prepara a localização do arquivo para o MTProto
+            file_location = InputDocumentFileLocation(
+                id=doc.id,
+                access_hash=doc.access_hash,
+                file_reference=doc.file_reference,
+                thumb_size=''
+            )
+
+            async def download_chunk(offset: int):
+                async with semaphore:
+                    for retry in range(3):
+                        try:
+                            result = await client(functions.upload.GetFileRequest(
+                                location=file_location,
+                                offset=offset,
+                                limit=FAST_CHUNK_SIZE
+                            ))
+                            
+                            if isinstance(result, types.upload.File):
+                                if HAS_PWRITE:
+                                    os.pwrite(fd, result.bytes, offset)
+                                else:
+                                    async with file_lock:
+                                        file_obj.seek(offset)
+                                        file_obj.write(result.bytes)
+                                
+                                nonlocal downloaded
+                                downloaded += len(result.bytes)
+                                
+                                # Envia progresso de 10% em 10%
+                                if progress_callback:
+                                    pct = int(downloaded / total_size * 100)
+                                    nonlocal last_reported_pct
+                                    if pct // 10 > last_reported_pct // 10 or pct == 100:
+                                        last_reported_pct = pct
+                                        try:
+                                            await progress_callback(f"📥 Baixando vídeo: {pct}% concluído...")
+                                        except:
+                                            pass
+                                return
+                        except Exception as e:
+                            # Tratamento de Flood Wait dinâmico
+                            wait_seconds = getattr(e, "seconds", None)
+                            if not wait_seconds and ("wait" in str(e).lower() or "flood" in str(e).lower()):
+                                wait_seconds = 5
+                            
+                            if wait_seconds:
+                                logger.warning(f"[SCRAPER] Telegram Wait (Tentativa {retry+1}/3): {e}. Aguardando {wait_seconds}s...")
+                                await asyncio.sleep(wait_seconds)
+                            else:
+                                if retry == 2:
+                                    raise e
+                                await asyncio.sleep(1)
+
+            # Dispara todas as tarefas em paralelo
+            offsets = range(0, total_size, FAST_CHUNK_SIZE)
+            tasks = [download_chunk(offset) for offset in offsets]
+            await asyncio.gather(*tasks)
+
+        finally:
+            if fd is not None:
+                os.close(fd)
+            if file_obj is not None:
+                file_obj.close()
+
+        # Verificação final de integridade
+        actual_size = os.path.getsize(output_path)
+        if actual_size != total_size:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+            return False, f"Download incompleto! Esperado {total_size}B, recebido {actual_size}B."
+
+        logger.info(f"[SCRAPER] Download paralelo concluído com sucesso: {output_path}")
+        return True, output_path
+
     except Exception as e:
-        logger.error(f"[SCRAPER] Erro ao baixar vídeo do Telegram: {e}")
+        logger.error(f"[SCRAPER] Erro crítico no download paralelo: {e}")
+        if os.path.exists(output_path):
+            try:
+                os.remove(output_path)
+            except:
+                pass
         return False, str(e)
 
 async def extract_post_meta_from_telegram(

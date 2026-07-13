@@ -1,6 +1,9 @@
 import os
 import sys
 import logging
+import asyncio
+import uuid
+import httpx
 from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -108,4 +111,131 @@ async def upload_to_youtube(
         
     except Exception as e:
         logger.error(f"[UPLOADER] Falha ao postar no YouTube: {e}")
+        return False, str(e)
+
+async def upload_to_dailymotion(
+    video_path: str,
+    title: str,
+    description: str,
+    tags: list,
+    privacy_status: str = "private", # private, public
+    progress_callback = None
+) -> Tuple[bool, str]:
+    """
+    Realiza o upload de um vídeo para o Dailymotion usando credenciais OAuth2 do .env.
+    """
+    logger.info(f"[UPLOADER] Iniciando upload para Dailymotion: {video_path}")
+    
+    # 1. Carrega as credenciais das variáveis de ambiente
+    client_id = os.getenv("DAILYMOTION_CLIENT_ID")
+    client_secret = os.getenv("DAILYMOTION_CLIENT_SECRET")
+    username = os.getenv("DAILYMOTION_USERNAME")
+    password = os.getenv("DAILYMOTION_PASSWORD")
+    
+    if not all([client_id, client_secret, username, password]):
+        logger.error("[UPLOADER] Credenciais do Dailymotion ausentes no .env")
+        return False, "Credenciais do Dailymotion ausentes no arquivo .env"
+        
+    try:
+        # FASE 1: Obter Token
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post("https://api.dailymotion.com/oauth/token", data={
+                "grant_type": "password",
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "username": username,
+                "password": password,
+                "scope": "manage_videos",
+            })
+            r.raise_for_status()
+            token = r.json().get("access_token")
+            if not token:
+                return False, "Falha ao obter token de acesso do Dailymotion."
+                
+            # FASE 2: Handshake da URL de upload
+            r = await client.get(
+                "https://api.dailymotion.com/file/upload",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            r.raise_for_status()
+            upload_url = r.json().get("upload_url")
+            if not upload_url:
+                return False, "Falha ao obter URL de upload temporária do Dailymotion."
+                
+            # FASE 3: Envio do arquivo streamado (chunks de 1MB)
+            file_size = os.path.getsize(video_path)
+            boundary = "----DailymotionAgentBoundary" + str(uuid.uuid4())[:8]
+            header_boundary = f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"video.mp4\"\r\nContent-Type: video/mp4\r\n\r\n"
+            footer_boundary = f"\r\n--{boundary}--\r\n"
+            total_len = len(header_boundary) + file_size + len(footer_boundary)
+            
+            async def file_generator():
+                sent = 0
+                with open(video_path, "rb") as f_obj:
+                    while True:
+                        chunk = await asyncio.to_thread(f_obj.read, 1 * 1024 * 1024)
+                        if not chunk:
+                            break
+                        sent += len(chunk)
+                        if progress_callback:
+                            try:
+                                pct = int(sent / file_size * 100)
+                                if asyncio.iscoroutinefunction(progress_callback):
+                                    await progress_callback(f"📤 Enviando Dailymotion: {pct}%...")
+                                else:
+                                    progress_callback(f"📤 Enviando Dailymotion: {pct}%...")
+                            except:
+                                pass
+                        yield chunk
+                        
+            async def multipart_generator():
+                yield header_boundary.encode()
+                async for chunk in file_generator():
+                    yield chunk
+                yield footer_boundary.encode()
+                
+            timeout = httpx.Timeout(None, connect=30.0, read=60.0, write=None)
+            async with httpx.AsyncClient(timeout=timeout, http1=True) as upload_client:
+                r = await upload_client.post(
+                    upload_url,
+                    content=multipart_generator(),
+                    headers={
+                        "Content-Type": f"multipart/form-data; boundary={boundary}",
+                        "Content-Length": str(total_len),
+                    }
+                )
+                r.raise_for_status()
+                video_url = r.json().get("url") or r.json().get("upload_url")
+                if not video_url:
+                    return False, "Sem URL de vídeo após upload."
+                    
+            # FASE 4: Publicação final
+            tags_str = ",".join(tags) if isinstance(tags, list) else tags
+            is_private = "true" if privacy_status.lower() == "private" else "false"
+            
+            payload = {
+                "url": video_url,
+                "title": title,
+                "description": description,
+                "tags": tags_str,
+                "channel": "school", # Canal padrão obrigatório no Dailymotion
+                "published": "true",
+                "private": is_private
+            }
+            
+            r = await client.post(
+                "https://api.dailymotion.com/me/videos",
+                headers={"Authorization": f"Bearer {token}"},
+                data=payload
+            )
+            r.raise_for_status()
+            video_id = r.json().get("id")
+            if not video_id:
+                return False, "Nenhum ID retornado na publicação do Dailymotion."
+                
+            logger.info(f"[UPLOADER] Upload concluído no Dailymotion! ID: {video_id}")
+            return True, video_id
+            
+    except Exception as e:
+        logger.error(f"[UPLOADER] Falha ao postar no Dailymotion: {e}")
         return False, str(e)

@@ -158,7 +158,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split("_")
         chat_id = parts[2]
         msg_id = int(parts[3])
-        platform_choice = parts[4] # yt, tt, both
+        platform_choice = parts[4] # yt, tt, dm, both, all
         priv_choice = parts[5] # public, private
         
         context.application.create_task(
@@ -167,7 +167,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dest_label = {
             "yt": "YouTube",
             "tt": "TikTok",
-            "both": "YouTube + TikTok"
+            "dm": "Dailymotion",
+            "both": "YouTube + TikTok",
+            "all": "YouTube + TikTok + Dailymotion"
         }.get(platform_choice, "Desconhecido")
         await query.edit_message_text(f"⏳ Processando vídeo no *{dest_label}* com privacidade: *{priv_choice.upper()}*...", parse_mode=ParseMode.MARKDOWN)
 
@@ -194,8 +196,16 @@ async def link_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("🎵 TikTok (Privado)", callback_data=f"set_dest_{chat_id}_{msg_id}_tt_private")
             ],
             [
-                InlineKeyboardButton("🔄 Ambos (Público)", callback_data=f"set_dest_{chat_id}_{msg_id}_both_public"),
-                InlineKeyboardButton("🔄 Ambos (Privado)", callback_data=f"set_dest_{chat_id}_{msg_id}_both_private")
+                InlineKeyboardButton("Ⓜ️ Dailymotion (Público)", callback_data=f"set_dest_{chat_id}_{msg_id}_dm_public"),
+                InlineKeyboardButton("Ⓜ️ Dailymotion (Privado)", callback_data=f"set_dest_{chat_id}_{msg_id}_dm_private")
+            ],
+            [
+                InlineKeyboardButton("🔄 Ambos YT+TT (Público)", callback_data=f"set_dest_{chat_id}_{msg_id}_both_public"),
+                InlineKeyboardButton("🔄 Ambos YT+TT (Privado)", callback_data=f"set_dest_{chat_id}_{msg_id}_both_private")
+            ],
+            [
+                InlineKeyboardButton("🌟 Todas Redes (Público)", callback_data=f"set_dest_{chat_id}_{msg_id}_all_public"),
+                InlineKeyboardButton("🌟 Todas Redes (Privado)", callback_data=f"set_dest_{chat_id}_{msg_id}_all_private")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -228,7 +238,10 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, plat
         
         # Fase 1: Baixar o vídeo
         async def progress(text):
-            await status_msg.edit_text(text)
+            try:
+                await status_msg.edit_text(text)
+            except Exception:
+                pass
             
         success, path = await scraper.download_telegram_video(
             client=client,
@@ -296,7 +309,7 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, plat
         
         # Fase 4: Postagem no YouTube (Vídeo Completo com Capa)
         yt_ok, yt_id = False, "Pulado"
-        if platform in ["yt", "both"]:
+        if platform in ["yt", "both", "all"]:
             await status_msg.edit_text("📤 Enviando Vídeo Completo para o YouTube...")
             yt_ok, yt_id = await uploader.upload_to_youtube(
                 video_path=tmp_orig,
@@ -309,23 +322,45 @@ async def _process_manual_post(chat_id: int, source_chat: str, msg_id: int, plat
         
         # Fase 5: Postagem no TikTok (Parte 1 Fatiada)
         tt_ok, tt_id = False, "Pulado"
-        if platform in ["tt", "both"]:
+        if platform in ["tt", "both", "all"]:
             await status_msg.edit_text("📤 Enviando Parte 1 para o TikTok...")
             tt_ok, tt_id = await uploader.upload_to_tiktok(
                 video_path=tmp_cut,
                 title=meta["tiktok_desc"],
                 privacy_level="PUBLIC" if privacy == "public" else "SELF_ONLY"
             )
+
+        # Fase 6: Postagem no Dailymotion (Vídeo Completo)
+        dm_ok, dm_id = False, "Pulado"
+        if platform in ["dm", "all"]:
+            await status_msg.edit_text("📤 Enviando Vídeo Completo para o Dailymotion...")
+            async def dm_progress(status_text):
+                try:
+                    await status_msg.edit_text(status_text)
+                except:
+                    pass
+            dm_ok, dm_id = await uploader.upload_to_dailymotion(
+                video_path=tmp_orig,
+                title=meta["youtube_title"],
+                description=meta["youtube_desc"],
+                tags=meta["tags"],
+                privacy_status=privacy,
+                progress_callback=dm_progress
+            )
         
         # Finalização e Limpeza
         result_text = f"✅ *PROCESSO CONCLUÍDO!*\n\n🎬 *Drama:* {title}\n🍿 *Total de Partes Enfileiradas (TikTok):* {len(parts_plan)}\n\n"
-        if platform in ["yt", "both"]:
+        if platform in ["yt", "both", "all"]:
             if yt_ok: result_text += f"📺 YouTube (Completo): Enviado (ID: `{yt_id}`)\n"
             else: result_text += f"❌ YouTube Falhou: {yt_id}\n"
         
-        if platform in ["tt", "both"]:
+        if platform in ["tt", "both", "all"]:
             if tt_ok: result_text += f"🎵 TikTok (Parte 1): Enviado (ID: `{tt_id}`)\n"
             else: result_text += f"❌ TikTok Falhou: {tt_id}\n"
+
+        if platform in ["dm", "all"]:
+            if dm_ok: result_text += f"Ⓜ️ Dailymotion (Completo): Enviado (ID: `{dm_id}`)\n"
+            else: result_text += f"❌ Dailymotion Falhou: {dm_id}\n"
         
         await status_msg.edit_text(result_text, parse_mode=ParseMode.MARKDOWN)
         
