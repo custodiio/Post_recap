@@ -1,16 +1,33 @@
 ﻿import json
 import os
+import sqlite3
 import requests
 
 def test():
-    token_path = "/home/ubuntu/apps/Post_recap/token.json"
-    if not os.path.exists(token_path):
-        print("token.json not found on VPS")
-        return
+    db_path = "/home/ubuntu/apps/database/users.db"
+    access_token = None
+    
+    if os.path.exists(db_path):
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT access_token FROM tiktok_connections ORDER BY connected_at DESC LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            access_token = row[0]
+            print("Loaded access_token from users.db")
+        conn.close()
         
-    with open(token_path, "r", encoding="utf-8") as f:
-        token_data = json.load(f)
-        access_token = token_data.get("access_token")
+    if not access_token:
+        token_path = "/home/ubuntu/apps/Post_recap/token.json"
+        if os.path.exists(token_path):
+            with open(token_path, "r", encoding="utf-8") as f:
+                token_data = json.load(f)
+                access_token = token_data.get("access_token")
+                print("Loaded access_token from token.json")
+                
+    if not access_token:
+        print("No access token found anywhere!")
+        return
         
     init_url = "https://open.tiktokapis.com/v2/post/publish/video/init/"
     headers = {
@@ -18,7 +35,7 @@ def test():
         "Content-Type": "application/json; charset=UTF-8"
     }
     
-    # Payload base com post_info simples
+    # 1. Testar payload com chaves básicas
     payload = {
         "post_info": {
             "title": "Teste de post",
@@ -34,8 +51,6 @@ def test():
             "total_chunk_count": 1
         }
     }
-    
-    # 1. Testar payload com chaves básicas
     print("Testando payload básico...")
     res = requests.post(init_url, headers=headers, json=payload)
     print(f"Status: {res.status_code}")
