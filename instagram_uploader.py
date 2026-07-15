@@ -56,16 +56,65 @@ def get_instagram_client():
         
     return cl
 
+def extract_first_frame(video_path, output_image_path):
+    """
+    Extrai o primeiro frame do vídeo usando ffmpeg em linha de comando.
+    """
+    import subprocess
+    try:
+        # Comando para extrair o primeiro frame no segundo 1 (evita tela preta)
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", "00:00:01",
+            "-i", video_path,
+            "-vframes", "1",
+            output_image_path
+        ]
+        # Executa em silêncio
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        return True
+    except Exception as e:
+        print(f"[AVISO] Falha ao extrair frame do vídeo com ffmpeg no segundo 1: {e}. Tentando no segundo 0...", flush=True)
+        try:
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-vframes", "1",
+                output_image_path
+            ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            return True
+        except Exception as e2:
+            print(f"[ERRO] Falha geral ao extrair frame com ffmpeg: {e2}", flush=True)
+            return False
+
 def upload_reel_to_instagram(video_path, caption, thumbnail_path=None):
     """
     Envia um vídeo do tipo Reel para o Instagram com legenda e capa.
     """
     cl = get_instagram_client()
     
-    # Se o caminho da capa foi passado mas o arquivo não existe fisicamente, remove para evitar erro do instagrapi
-    if thumbnail_path and not os.path.exists(thumbnail_path):
-        print(f"[AVISO] Capa especificada não encontrada no caminho local {thumbnail_path}. Enviando sem capa personalizada.", flush=True)
+    # Se thumbnail_path for vazio/falso, normaliza para None
+    if not thumbnail_path:
         thumbnail_path = None
+        
+    # Se o caminho da capa foi passado mas o arquivo não existe fisicamente, remove
+    if thumbnail_path and not os.path.exists(thumbnail_path):
+        print(f"[AVISO] Capa especificada não encontrada no caminho local {thumbnail_path}. Tentando gerar capa padrão.", flush=True)
+        thumbnail_path = None
+        
+    temp_thumbnail = None
+    # Se não temos capa (ou se foi removida), extraímos o primeiro frame do vídeo programaticamente
+    if not thumbnail_path:
+        video_dir = os.path.dirname(os.path.abspath(video_path))
+        temp_thumbnail = os.path.join(video_dir, f"temp_cover_{int(time.time())}.jpg")
+        print(f"[INSTAGRAM] Gerando capa padrão a partir do vídeo...", flush=True)
+        if extract_first_frame(video_path, temp_thumbnail):
+            thumbnail_path = temp_thumbnail
+            print(f"[INSTAGRAM] Capa padrão gerada com sucesso: {thumbnail_path}", flush=True)
+        else:
+            thumbnail_path = None
+            print(f"[AVISO] Não foi possível gerar capa padrão. Enviando sem capa.", flush=True)
         
     file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
     print(f"\n[INSTAGRAM] 🚀 Iniciando processo de envio do Reels...", flush=True)
@@ -90,6 +139,14 @@ def upload_reel_to_instagram(video_path, caption, thumbnail_path=None):
     except Exception as e:
         print(f"\n[INSTAGRAM] ❌ ERRO AO FAZER UPLOAD DO REELS: {e}", flush=True)
         raise e
+    finally:
+        # Remove a capa temporária gerada
+        if temp_thumbnail and os.path.exists(temp_thumbnail):
+            try:
+                os.remove(temp_thumbnail)
+                print(f"[INSTAGRAM] Capa temporária removida: {temp_thumbnail}", flush=True)
+            except Exception as e_clean:
+                print(f"[AVISO] Falha ao remover capa temporária: {e_clean}", flush=True)
 
 def process_instagram_queue():
     """

@@ -227,17 +227,22 @@ def upload_video_to_tiktok(
         "Content-Type": "application/json; charset=UTF-8"
     }
     
+    post_info = {
+        "title": title or "Post Recap Video",
+        "privacy_level": privacy_level_mapped,
+        "disable_duet": disable_duet,
+        "disable_stitch": disable_stitch,
+        "disable_comment": disable_comment
+    }
+    if brand_content_toggle:
+        post_info["brand_content_toggle"] = True
+    if brand_organic_toggle:
+        post_info["brand_organic_toggle"] = True
+    if is_aigc:
+        post_info["is_aigc"] = True
+
     payload = {
-        "post_info": {
-            "title": title or "Post Recap Video",
-            "privacy_level": privacy_level_mapped,
-            "disable_duet": disable_duet,
-            "disable_stitch": disable_stitch,
-            "disable_comment": disable_comment,
-            "brand_content_toggle": brand_content_toggle,
-            "brand_organic_toggle": brand_organic_toggle,
-            "is_aigc": is_aigc
-        },
+        "post_info": post_info,
         "source_info": {
             "source": "FILE_UPLOAD",
             "video_size": video_size,
