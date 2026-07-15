@@ -202,18 +202,15 @@ def upload_video_to_tiktok(
     video_size = os.path.getsize(video_path)
     
     # 3. Calcular tamanho dos chunks (máximo de 64MB por chunk, padrão de 50MB)
-    MAX_SINGLE_CHUNK = 64 * 1000 * 1000  # 64MB
+    MAX_SINGLE_CHUNK = 64 * 1024 * 1024  # 64MB
     if video_size <= MAX_SINGLE_CHUNK:
         actual_chunk_size = video_size
         total_chunk_count = 1
     else:
-        TARGET_CHUNK_SIZE = 50 * 1000 * 1000  # 50MB
-        total_chunk_count = video_size // TARGET_CHUNK_SIZE
-        if total_chunk_count < 2:
-            total_chunk_count = 2
-            actual_chunk_size = video_size // 2
-        else:
-            actual_chunk_size = TARGET_CHUNK_SIZE
+        TARGET_CHUNK_SIZE = 50 * 1024 * 1024  # 50MB
+        # Calcula o número total de chunks arredondando para cima
+        total_chunk_count = (video_size + TARGET_CHUNK_SIZE - 1) // TARGET_CHUNK_SIZE
+        actual_chunk_size = TARGET_CHUNK_SIZE
             
     print(f"[TIKTOK-OFFICIAL] Inicializando postagem oficial. Vídeo: {video_size} bytes, Privacidade: {privacy_level_mapped}", flush=True)
     if progress_callback:
