@@ -28,6 +28,7 @@ def test():
     }
     
     video_size = 171302532
+    real_failed_title = "ELA TEM UM FERRÃO MISTERIOSO... E QUEM TOCAR NELE TEM QUE SE CASAR! | Desconhecido EP 1"
     
     # Casos de teste
     tests = [
@@ -41,7 +42,7 @@ def test():
     for name, chunk_size, count in tests:
         payload = {
             "post_info": {
-                "title": "Teste TikTok",
+                "title": real_failed_title,
                 "privacy_level": "PUBLIC_TO_EVERYONE"
             },
             "source_info": {
