@@ -84,6 +84,12 @@ def init_db():
     except sqlite3.OperationalError:
         pass # Coluna já existe
 
+    # Migração: Garante que a coluna cover_path existe na tabela dramas
+    try:
+        cursor.execute("ALTER TABLE dramas ADD COLUMN cover_path TEXT")
+    except sqlite3.OperationalError:
+        pass # Coluna já existe
+
     # Tabela de Tokens temporários de Login
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS login_tokens (
@@ -163,6 +169,13 @@ def get_all_dramas():
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def update_drama_cover(drama_id: int, cover_path: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE dramas SET cover_path = ? WHERE id = ?', (cover_path, drama_id))
+    conn.commit()
+    conn.close()
 
 def get_drama(drama_id):
     conn = get_connection()
