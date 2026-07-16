@@ -43,7 +43,10 @@ def test():
         payload = {
             "post_info": {
                 "title": real_failed_title,
-                "privacy_level": "PUBLIC_TO_EVERYONE"
+                "privacy_level": "PUBLIC_TO_EVERYONE",
+                "disable_duet": True,
+                "disable_stitch": True,
+                "disable_comment": False
             },
             "source_info": {
                 "source": "FILE_UPLOAD",
