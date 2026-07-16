@@ -1133,11 +1133,9 @@ async def run_local_schedule_pipeline(status_msg, platforms, post_data, guia):
             if g.get("tiktok_guia"):
                 return g["tiktok_guia"]
             hook = g.get("tiktok_titulo") or g.get("titulo_principal") or "Você teria coragem de assistir até o final? 😳"
-            titulo_anime = g.get("tiktok_titulo_anime") or g.get("titulo_anime") or "Release That Witch"
-            sinopse = g.get("tiktok_sinopse") or g.get("sinopse") or "Um resumo incrível!"
-            tags_list = g.get("instagram_hashtags") or g.get("tiktok_hashtags") or ["#anime", "#recap", "#viral"]
-            tags_str = " ".join(tags_list[:5]) if isinstance(tags_list, list) else tags_list
-            return f"{hook}\n\nTitulo: {titulo_anime}\n\nSinopse: {sinopse}\n\n{tags_str}"
+            tags_list = g.get("tiktok_hashtags") or g.get("instagram_hashtags") or ["#anime", "#recap", "#viral"]
+            tags_str = " ".join(tags_list[:5]) if isinstance(tags_list, list) else " ".join([t for t in tags_list.split() if t.startswith("#")][:5])
+            return f"{hook}\n\n{tags_str}"
             
         caption_texto = get_formatted_caption(guia)
         sched_time = post_data.get("unified_scheduled_time")
@@ -1301,26 +1299,33 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
         yt_title = post_data.get("youtube_title", "")
         tt_title = guia.get("titulo_principal", "")
         
-        # Constrói o texto formatado para TikTok e Instagram
-        def get_formatted_caption(g):
-            if g.get("tiktok_guia"):
-                return g["tiktok_guia"]
-            
-            hook = g.get("tiktok_titulo") or g.get("titulo_principal") or "Você teria coragem de assistir até o final? 😳"
-            titulo_anime = g.get("tiktok_titulo_anime") or g.get("titulo_anime") or "Release That Witch"
-            sinopse = g.get("tiktok_sinopse") or g.get("sinopse") or "Um resumo incrível desse anime!"
-            
-            # Pega as 5 hashtags virais
-            tags_list = g.get("instagram_hashtags") or g.get("tiktok_hashtags") or ["#anime", "#recap", "#viral", "#desenho", "#otaku"]
-            if isinstance(tags_list, list):
-                tags_str = " ".join(tags_list[:5])
-            else:
-                tags_str = " ".join([t for t in tags_list.split() if t.startswith("#")][:5])
-                
-            return f"{hook}\n\nTitulo: {titulo_anime}\n\nSinopse: {sinopse}\n\n{tags_str}"
-
-        caption_texto = get_formatted_caption(guia)
-        ig_caption = caption_texto
+        hook = guia.get("tiktok_titulo") or guia.get("titulo_principal") or "Você teria coragem de assistir até o final? 😳"
+        titulo_anime = guia.get("tiktok_titulo_anime") or guia.get("titulo_anime") or ""
+        sinopse = guia.get("tiktok_sinopse") or guia.get("sinopse") or ""
+        tags_list = guia.get("tiktok_hashtags") or guia.get("instagram_hashtags") or ["#anime", "#recap", "#viral"]
+        
+        if isinstance(tags_list, list):
+            tags_tt = " ".join(tags_list[:5])
+            tags_ig = " ".join(tags_list)
+        else:
+            all_tags = [t for t in tags_list.split() if t.startswith("#")]
+            tags_tt = " ".join(all_tags[:5])
+            tags_ig = " ".join(all_tags)
+        
+        # Caption do TikTok: só hook + até 5 hashtags (sem sinopse, para respeitar limite da API)
+        if guia.get("tiktok_guia"):
+            caption_texto = guia["tiktok_guia"]
+        else:
+            caption_texto = f"{hook}\n\n{tags_tt}"
+        
+        # Caption do Instagram: hook + sinopse completa + todas as hashtags
+        ig_parts = [hook]
+        if titulo_anime:
+            ig_parts.append(f"Titulo: {titulo_anime}")
+        if sinopse:
+            ig_parts.append(f"Sinopse: {sinopse}")
+        ig_parts.append(tags_ig)
+        ig_caption = "\n\n".join(ig_parts)
         
         print(f"[PIPELINE LOG] Registrando post no banco de dados. YouTube={platforms['youtube']}, TikTok={platforms['tiktok']}, Instagram={platforms['instagram']}...", flush=True)
         db_post_id = db.log_post(
