@@ -35,6 +35,24 @@ import instagram_uploader
 
 load_dotenv()
 
+# Filtra o texto para manter no máximo 5 hashtags
+def filter_hashtags(text, max_tags=5):
+    import re
+    hashtags = re.findall(r'#\w+', text)
+    if len(hashtags) <= max_tags:
+        return text
+    # Remove as hashtags excedentes do texto
+    keep = set(hashtags[:max_tags])
+    count = {}
+    def replacer(m):
+        tag = m.group(0)
+        count[tag] = count.get(tag, 0) + 1
+        if tag in keep and count[tag] == 1:
+            return tag
+        return ""
+    return re.sub(r'#\w+', replacer, text).strip()
+
+
 # Estados da conversação
 SELECT_PLATFORMS, SELECT_YOUTUBE_TITLE, INPUT_YOUTUBE_TITLE_MANUAL, SELECT_SHORTS_TITLE, INPUT_SHORTS_TITLE_MANUAL, SELECT_YOUTUBE_PRIVACY, SELECT_INSTAGRAM_SCHEDULING, INPUT_INSTAGRAM_TIME, SELECT_TIKTOK_PRIVACY, SELECT_TIKTOK_SCHEDULING, INPUT_TIKTOK_TIME, CONFIRM_POST, INPUT_UNIFIED_SCHEDULE_TIME = range(13)
 
@@ -1128,22 +1146,7 @@ async def run_local_schedule_pipeline(status_msg, platforms, post_data, guia):
         shorts_title = post_data.get("shorts_title", "")
         tt_title = guia.get("titulo_principal", "")
         
-        # Filtra o texto para manter no máximo 5 hashtags
-        def filter_hashtags(text, max_tags=5):
-            import re
-            hashtags = re.findall(r'#\w+', text)
-            if len(hashtags) <= max_tags:
-                return text
-            # Remove as hashtags excedentes do texto
-            keep = set(hashtags[:max_tags])
-            count = {}
-            def replacer(m):
-                tag = m.group(0)
-                count[tag] = count.get(tag, 0) + 1
-                if tag in keep and count[tag] == 1:
-                    return tag
-                return ""
-            return re.sub(r'#\w+', replacer, text).strip()
+
 
         # Constrói legendas
         def get_formatted_caption(g):
