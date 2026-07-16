@@ -252,8 +252,13 @@ def upload_video_to_tiktok(
         "Content-Type": "application/json; charset=UTF-8"
     }
     
+    # A API oficial de postagem do TikTok impõe um limite estrito de 150 caracteres para o campo 'title' (legenda)
+    safe_title = title or "Post Recap Video"
+    if len(safe_title) > 150:
+        safe_title = safe_title[:147] + "..."
+        
     post_info = {
-        "title": title or "Post Recap Video",
+        "title": safe_title,
         "privacy_level": privacy_level_mapped,
         "disable_duet": disable_duet,
         "disable_stitch": disable_stitch,
