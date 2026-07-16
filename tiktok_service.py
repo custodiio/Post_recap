@@ -275,7 +275,7 @@ def upload_video_to_tiktok(
             "total_chunk_count": total_chunk_count
         }
     }
-    
+    print(f"[TIKTOK-OFFICIAL] Payload de Envio:\n{json.dumps(payload, indent=2)}", flush=True)
     init_res = requests.post(init_url, headers=headers, json=payload)
     print(f"[TIKTOK-OFFICIAL] Resposta Inicialização: Status {init_res.status_code}, Body: {init_res.text[:300]}", flush=True)
     
