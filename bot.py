@@ -1128,10 +1128,27 @@ async def run_local_schedule_pipeline(status_msg, platforms, post_data, guia):
         shorts_title = post_data.get("shorts_title", "")
         tt_title = guia.get("titulo_principal", "")
         
+        # Filtra o texto para manter no máximo 5 hashtags
+        def filter_hashtags(text, max_tags=5):
+            import re
+            hashtags = re.findall(r'#\w+', text)
+            if len(hashtags) <= max_tags:
+                return text
+            # Remove as hashtags excedentes do texto
+            keep = set(hashtags[:max_tags])
+            count = {}
+            def replacer(m):
+                tag = m.group(0)
+                count[tag] = count.get(tag, 0) + 1
+                if tag in keep and count[tag] == 1:
+                    return tag
+                return ""
+            return re.sub(r'#\w+', replacer, text).strip()
+
         # Constrói legendas
         def get_formatted_caption(g):
             if g.get("tiktok_guia"):
-                return g["tiktok_guia"]
+                return filter_hashtags(g["tiktok_guia"])
             hook = g.get("tiktok_titulo") or g.get("titulo_principal") or "Você teria coragem de assistir até o final? 😳"
             tags_list = g.get("tiktok_hashtags") or g.get("instagram_hashtags") or ["#anime", "#recap", "#viral"]
             tags_str = " ".join(tags_list[:5]) if isinstance(tags_list, list) else " ".join([t for t in tags_list.split() if t.startswith("#")][:5])
@@ -1312,9 +1329,9 @@ async def run_upload_pipeline(status_msg, platforms, post_data, guia):
             tags_tt = " ".join(all_tags[:5])
             tags_ig = " ".join(all_tags)
         
-        # Caption do TikTok: só hook + até 5 hashtags (sem sinopse, para respeitar limite da API)
+        # Caption do TikTok: tiktok_guia completo se existir (mas com max 5 hashtags), ou hook + 5 hashtags
         if guia.get("tiktok_guia"):
-            caption_texto = guia["tiktok_guia"]
+            caption_texto = filter_hashtags(guia["tiktok_guia"])
         else:
             caption_texto = f"{hook}\n\n{tags_tt}"
         
