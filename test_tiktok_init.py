@@ -28,7 +28,7 @@ def test():
     }
     
     video_size = 171302532
-    real_failed_title = "ELA TEM UM FERRÃO MISTERIOSO... E QUEM TOCAR NELE TEM QUE SE CASAR! | Desconhecido EP 1"
+    real_failed_title = "ELA TEM UM FERRÃO MISTERIOSO... E QUEM TOCAR NELE TEM QUE SE CASAR! 😳\n\nTitulo: Desconhecido\n\nSinopse: Um resumo incrível!\n\n#anime #recap #viral"
     
     # Casos de teste
     tests = [
