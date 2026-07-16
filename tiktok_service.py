@@ -240,7 +240,7 @@ def upload_video_to_tiktok(
             if total_chunk_count < 1:
                 total_chunk_count = 1
             
-    print(f"[TIKTOK-OFFICIAL] Inicializando postagem oficial. Vídeo: {video_size} bytes, Privacidade: {privacy_level_mapped}", flush=True)
+    print(f"[TIKTOK-OFFICIAL] Inicializando postagem oficial. Vídeo: {video_size} bytes, Privacidade: {privacy_level_mapped}, Chunk Size: {actual_chunk_size}, Chunk Count: {total_chunk_count}", flush=True)
     if progress_callback:
         try: progress_callback(5)
         except Exception: pass
