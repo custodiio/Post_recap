@@ -4,9 +4,10 @@ import html
 import json
 import threading
 import time
-import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
+import requests
+import re
 
 # Configura o stdout/stderr para flushing imediato no console do terminal
 try:
@@ -97,38 +98,77 @@ def process_scheduled_posts(bot):
         return
         
     print(f"[SCHEDULER WORKER] Encontrados {len(jobs)} agendamentos unificados para processar.")
-    # Usamos o event loop na thread secundária para operações assíncronas do Telethon/Telegram
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    
+
+    def _notify(msg_html):
+        try:
+            bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+            if not bot_token:
+                return
+            for _uid in APPROVED_USERS:
+                if str(_uid).isdigit():
+                    requests.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={"chat_id": int(_uid), "text": msg_html, "parse_mode": "HTML"},
+                        timeout=5
+                    )
+        except Exception as _e:
+            print(f"[SCHEDULER WORKER] Falha ao enviar notificação: {_e}", flush=True)
+
+    def _make_progress_cb(platform_label):
+        _last = [0]
+        def _cb(percent):
+            pct = int(percent)
+            if pct >= _last[0] + 10 or pct >= 100:
+                _last[0] = pct
+                print(f"[SCHEDULER WORKER] {platform_label}: {pct}%", flush=True)
+        return _cb
+
     for job in jobs:
-        post_id, video_path, thumb_yt, thumb_tt, title_yt, title_shorts, tiktok_caption, instagram_caption, post_yt, post_shorts, post_tt, post_ig, tiktok_privacy, sched_time, shorts_description = job
+        post_id, video_path, thumb_yt, thumb_tt, title_yt, title_shorts, tiktok_caption, instagram_caption, post_yt, post_shorts, post_tt, post_ig, tiktok_privacy, sched_time, shorts_description, youtube_tags = job if len(job) >= 16 else (*job, "")
         print(f"[SCHEDULER WORKER] Processando post #{post_id}...")
         
-        # Marca como processing para não duplicar
         db.update_scheduled_post_status(post_id, "processing")
         
         results = []
         errors = []
         
+        _platforms = []
+        if post_yt: _platforms.append("📺 YouTube")
+        if post_shorts: _platforms.append("🎬 YouTube Shorts")
+        if post_tt: _platforms.append("🎵 TikTok")
+        if post_ig: _platforms.append("📸 Instagram")
+        _platforms_str = "  |  ".join(_platforms) if _platforms else "Nenhuma"
+        _title_display = title_shorts or title_yt or tiktok_caption[:50] if (title_shorts or title_yt or tiktok_caption) else f"Post #{post_id}"
+        _notify(f"🚀 <b>Iniciando publicação #{post_id}</b>\n📌 {_title_display}\n🎯 Plataformas: {_platforms_str}")
+        
         # 1. YouTube
         if post_yt:
             try:
                 print(f"[SCHEDULER WORKER] Enviando post #{post_id} para o YouTube...", flush=True)
-                tags_yt = ["anime", "recap"]
+                _notify(f"📤 <b>Enviando para o YouTube...</b>\n📌 {title_yt}")
+                _desc_for_yt = shorts_description or tiktok_caption or title_yt
+                if youtube_tags and str(youtube_tags).strip():
+                    tags_yt = [t.strip() for t in str(youtube_tags).split(",") if t.strip()]
+                    print(f"[SCHEDULER WORKER] Usando tags do guia: {tags_yt}", flush=True)
+                else:
+                    _raw_tags = re.findall(r'#(\w+)', _desc_for_yt)
+                    tags_yt = list(dict.fromkeys(_raw_tags)) if _raw_tags else ["anime", "recap", "animerecap"]
                 vid_id, vid_url = youtube_uploader.upload_video_to_youtube(
                     video_path=video_path,
                     title=title_yt,
-                    description=title_yt,
+                    description=_desc_for_yt,
                     tags=tags_yt,
                     category_id="24",
                     privacy_status="draft",
                     thumbnail_path=thumb_yt if thumb_yt and os.path.exists(thumb_yt) else None,
-                    progress_callback=None
+                    progress_callback=_make_progress_cb("YouTube")
                 )
+                _notify(f"✅ <b>YouTube OK!</b> ID: {vid_id}\n🔗 {vid_url}")
                 results.append(f"YouTube (URL: {vid_url})")
             except Exception as ex:
                 errors.append(f"YouTube: {ex}")
@@ -138,9 +178,17 @@ def process_scheduled_posts(bot):
         if post_shorts:
             try:
                 print(f"[SCHEDULER WORKER] Enviando post #{post_id} para o YouTube Shorts...", flush=True)
-                tags_yt = ["anime", "recap", "Shorts"]
+                _notify(f"📤 <b>Enviando para o YouTube Shorts...</b>\n📌 {title_shorts}")
+                _desc_for_shorts_tags = shorts_description or tiktok_caption or title_shorts
+                if youtube_tags and str(youtube_tags).strip():
+                    tags_yt = [t.strip() for t in str(youtube_tags).split(",") if t.strip()]
+                    if "Shorts" not in tags_yt:
+                        tags_yt.append("Shorts")
+                    print(f"[SCHEDULER WORKER] Shorts usando tags do guia: {tags_yt}", flush=True)
+                else:
+                    _raw_shorts_tags = re.findall(r'#(\w+)', _desc_for_shorts_tags)
+                    tags_yt = list(dict.fromkeys(_raw_shorts_tags)) if _raw_shorts_tags else ["anime", "recap", "Shorts", "animerecap"]
                 
-                # Se não temos shorts_description vindo do banco, faz o fallback
                 desc_shorts_final = shorts_description
                 if not desc_shorts_final:
                     desc_shorts_final = tiktok_caption if tiktok_caption else (instagram_caption if instagram_caption else title_shorts)
@@ -155,8 +203,9 @@ def process_scheduled_posts(bot):
                     category_id="24",
                     privacy_status="draft",
                     thumbnail_path=thumb_yt if thumb_yt and os.path.exists(thumb_yt) else None,
-                    progress_callback=None
+                    progress_callback=_make_progress_cb("YouTube Shorts")
                 )
+                _notify(f"✅ <b>YouTube Shorts OK!</b> ID: {vid_id}\n🔗 {vid_url}")
                 results.append(f"YouTube Shorts (URL: {vid_url})")
             except Exception as ex:
                 errors.append(f"YouTube Shorts: {ex}")
@@ -166,6 +215,7 @@ def process_scheduled_posts(bot):
         if post_tt:
             try:
                 print(f"[SCHEDULER WORKER] Enviando post #{post_id} para o TikTok...", flush=True)
+                _notify(f"📤 <b>Enviando para o TikTok...</b>")
                 pub_id = tiktok_service.upload_video_to_tiktok(
                     video_path=video_path,
                     title=tiktok_caption,
@@ -198,19 +248,19 @@ def process_scheduled_posts(bot):
             err_msg = "; ".join(errors)
             db.update_scheduled_post_status(post_id, "failed", error=err_msg)
             print(f"[SCHEDULER WORKER] Post #{post_id} falhou: {err_msg}", flush=True)
-            # Notifica usuários aprovados sobre falha
-            try:
-                notify_text = f"❌ <b>Falha ao processar Publicação Programada #{post_id}</b>\nData: {sched_time}\nErro: {err_msg}"
-                for user_id in APPROVED_USERS:
-                    if user_id.isdigit():
-                        loop.run_until_complete(bot.send_message(chat_id=int(user_id), text=notify_text, parse_mode="HTML"))
-            except Exception as notify_err:
-                print(f"[SCHEDULER WORKER] Falha ao enviar notificação de erro: {notify_err}", flush=True)
+            _notify(f"❌ <b>Falha ao processar Publicação Programada #{post_id}</b>\nData: {sched_time}\nErro: {err_msg}")
         else:
             db.update_scheduled_post_status(post_id, "completed")
             print(f"[SCHEDULER WORKER] Post #{post_id} concluído com sucesso!", flush=True)
             
-            # Limpa arquivos físicos
+            # Gatilho automático pós-postagem: aciona a produção do próximo episódio
+            try:
+                import requests as _rq
+                _rq.post("http://localhost:5556/api/douyin/trigger-next", timeout=10)
+                print(f"[SCHEDULER WORKER] ⚡ Próxima produção engatilhada automaticamente via API!", flush=True)
+            except Exception as _e_trig:
+                print(f"[SCHEDULER WORKER] Aviso ao engatilhar próxima produção: {_e_trig}", flush=True)
+            
             deleted_count = 0
             for path in [video_path, thumb_yt, thumb_tt]:
                 if path and os.path.exists(path):
@@ -220,7 +270,6 @@ def process_scheduled_posts(bot):
                     except Exception as ex:
                         print(f"[SCHEDULER WORKER] Erro ao remover arquivo local: {path}: {ex}", flush=True)
             
-            # Remove pasta post_dir
             base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scheduled_posts")
             post_dir = os.path.join(base_dir, f"post_{post_id}")
             if os.path.exists(post_dir):

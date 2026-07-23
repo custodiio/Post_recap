@@ -68,9 +68,13 @@ def init_db():
     )
     """)
     
-    # Migração para bancos existentes: tenta adicionar a coluna shorts_description se não existir
+    # Migração para bancos existentes: tenta adicionar colunas se não existirem
     try:
         cursor.execute("ALTER TABLE scheduled_posts ADD COLUMN shorts_description TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE scheduled_posts ADD COLUMN youtube_tags TEXT")
     except sqlite3.OperationalError:
         pass
     
@@ -188,7 +192,7 @@ def get_pending_scheduled_posts():
     SELECT id, video_path, thumbnail_youtube, thumbnail_tiktok,
            title_youtube, title_shorts, tiktok_caption, instagram_caption,
            post_youtube, post_shorts, post_tiktok, post_instagram,
-           tiktok_privacy, scheduled_time, shorts_description
+           tiktok_privacy, scheduled_time, shorts_description, youtube_tags
     FROM scheduled_posts
     WHERE status = 'pending' AND datetime(scheduled_time) <= datetime('now', 'localtime')
     """)
